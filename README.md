@@ -12,10 +12,14 @@ example/          runnable demo, and the only working code
   renderer.js       one possible renderer (SVG). Replaceable.
   node-types.js     PROJECT code — all node types, including the branch split
   mermaid-io.js     the only file that knows Mermaid exists
-  graph-core.js     LIBRARY — document, ports, mutations, hooks, validation
+  core/             LIBRARY — document, ports, mutations, hooks, validation
+    model/            one file per entity, each with its factory
+    services/         one file per domain service (ranking, registry,
+                      topology, mutation, validation, ops)
+    graph.js          the Graph aggregate facade
   samples/*.mmd     one Mermaid sample per dialect
-  selftest.mjs      92 checks, no dependencies:  node selftest.mjs
-  domtest.mjs       70 checks driving the real page:  npm i jsdom && node domtest.mjs
+  tests/selftest.mjs  92 checks, no dependencies:  node tests/selftest.mjs
+  tests/domtest.mjs   70 checks driving the real page:  npm i jsdom && node tests/domtest.mjs
   README.md         what to click, and what to watch
 
 docs/
@@ -41,7 +45,7 @@ contain children, edges connect ports, ports declare a capacity, and something
 gets asked when a capacity is exceeded.
 
 It does not know what a scene is, what branching means, how to draw a box, or
-that Mermaid exists. Grep `graph-core.js` for `split`, `branch`, `render` or
+that Mermaid exists. Grep `example/core/` for `split`, `branch`, `render` or
 `mermaid` — every hit is a comment saying it does not do that.
 
 The branch split is the proof. It inserts itself when a port overflows, grows its

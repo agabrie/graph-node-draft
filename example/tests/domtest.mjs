@@ -5,11 +5,11 @@
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 
-const html = readFileSync(new URL('./example.html', import.meta.url), 'utf8');
+const html = readFileSync(new URL('../example.html', import.meta.url), 'utf8');
 const dom = new JSDOM(html, {
   runScripts: 'dangerously',
   resources: 'usable',
-  url: new URL('./example.html', import.meta.url).href,
+  url: new URL('../example.html', import.meta.url).href,
   pretendToBeVisual: true
 });
 

@@ -5,9 +5,22 @@
 import { readFileSync } from 'node:fs';
 
 const load = (f) => (0, eval)(readFileSync(new URL(f, import.meta.url), 'utf8'));
-load('./graph-core.js');
-load('./node-types.js');
-load('./mermaid-io.js');
+load('../core/util.js');
+load('../core/model/ids.js');
+load('../core/model/port.js');
+load('../core/model/node.js');
+load('../core/model/edge.js');
+load('../core/model/document.js');
+load('../core/model/base-node-type.js');
+load('../core/services/ranking.js');
+load('../core/services/registry.js');
+load('../core/services/topology.js');
+load('../core/graph.js');
+load('../core/services/mutation.js');
+load('../core/services/validation.js');
+load('../core/services/ops.js');
+load('../node-types.js');
+load('../mermaid-io.js');
 
 const { GraphCore, DemoTypes, MermaidIO } = globalThis;
 
@@ -212,9 +225,9 @@ section('edit, detach, disconnect, purge');
 /* ------------------------------------------------------------------ */
 section('mermaid import');
 const samples = {
-  flowchart: readFileSync(new URL('./samples/flowchart.mmd', import.meta.url), 'utf8'),
-  sequence: readFileSync(new URL('./samples/sequence.mmd', import.meta.url), 'utf8'),
-  er: readFileSync(new URL('./samples/er.mmd', import.meta.url), 'utf8')
+  flowchart: readFileSync(new URL('../samples/flowchart.mmd', import.meta.url), 'utf8'),
+  sequence: readFileSync(new URL('../samples/sequence.mmd', import.meta.url), 'utf8'),
+  er: readFileSync(new URL('../samples/er.mmd', import.meta.url), 'utf8')
 };
 {
   const g = newGraph();

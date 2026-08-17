@@ -7,15 +7,15 @@ Everything is classic `<script>` tags so `file://` works.
 
 | File | Layer | What it is |
 |---|---|---|
-| `example.html` | app | Page and styles. Loads the four scripts below, then `example.js`. |
+| `example.html` | app | Page and styles. Loads the core scripts below, then `example.js`. |
 | `example.js` | app | Wires it together: presets, palette, inspector, Mermaid buttons. |
 | `renderer.js` | app | One possible renderer. Reads only type, label, ports, `view` and containment — never `node.data`. |
 | `node-types.js` | **project** | All node types, each a subclass of `GraphCore.BaseNodeType`. Includes the branch split. |
 | `mermaid-io.js` | adapter | The only file that knows Mermaid exists. |
-| `graph-core.js` | **library** | Document, mutations, ports, hooks, validation. Knows nothing about rendering, layout, Mermaid, or any domain type. |
+| `core/` | **library** | Document, mutations, ports, hooks, validation. Knows nothing about rendering, layout, Mermaid, or any domain type. One file per entity in `core/model/` (each with its factory), one file per service in `core/services/`, and the `Graph` aggregate facade in `core/graph.js`. |
 | `samples/*.mmd` | fixtures | One sample per dialect. |
-| `selftest.mjs` | test | 92 headless checks. `node selftest.mjs` — no dependencies. |
-| `domtest.mjs` | test | 70 checks that drive the actual page. `npm i jsdom && node domtest.mjs`. |
+| `tests/selftest.mjs` | test | 92 headless checks. `node tests/selftest.mjs` — no dependencies. |
+| `tests/domtest.mjs` | test | 70 checks that drive the actual page. `npm i jsdom && node tests/domtest.mjs`. |
 
 Delete `node-types.js` and the library still runs — you just have no types to place.
 That is the boundary the whole design is built around.
@@ -52,7 +52,7 @@ Load **branching (auto split)**, then:
 3. `BranchSplitNode.handleOverflow` inserts a split, retargets the existing edge through it, and wires both branches. It also grows a spare third output.
 4. Now delete either branch edge (click the edge, then `Remove edge`). The split sees it is no longer branching and removes itself, joining its neighbours back up.
 
-None of that behaviour is in `graph-core.js`. Grep it for `split`, `branch` or `overflow` — the only hit is the generic hand-off. The library's entire contribution is: ports declare a capacity, and something gets asked when one is exceeded.
+None of that behaviour is in `core/`. Grep it for `split`, `branch` or `overflow` — the only hit is the generic hand-off in `core/services/ops.js`. The library's entire contribution is: ports declare a capacity, and something gets asked when one is exceeded.
 
 Three things stop the auto-removal, all visible in `node-types.js`:
 
