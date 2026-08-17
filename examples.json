@@ -10,7 +10,7 @@
       "kind": "flowchart",
       "title": "Checkout request path",
       "meta": {
-        "layout": { "direction": "LR", "engine": "dagre" },
+        "layout": { "direction": "LR" },
         "createdAt": "2026-08-17T09:00:00Z",
         "updatedAt": "2026-08-17T09:00:00Z",
         "revision": 1
@@ -496,7 +496,7 @@
       "kind": "story",
       "title": "Act two — the descent",
       "meta": {
-        "layout": { "direction": "LR", "engine": "dagre" },
+        "layout": { "direction": "LR" },
         "createdAt": "2026-08-10T11:00:00Z",
         "updatedAt": "2026-08-17T09:12:00Z",
         "revision": 87

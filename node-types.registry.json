@@ -1,7 +1,8 @@
 {
   "registryVersion": "1.0.0",
-  "$comment": "The only place domain vocabulary is allowed to appear. Grep the editor package for 'scene', 'act', 'split', 'flowchart' or 'participant' — zero hits, or semantics have leaked out of this file.",
-  "$comment-portability": "`component` and `icon` are the only framework-facing fields here, and both are OPAQUE KEYS, not imports. The frontend owns a binding map from key to whatever it renders with: Vue `{ StorySceneNode: defineAsyncComponent(...) }`, React `{ StorySceneNode: StoryScene }`, Svelte, or a native widget factory. Nothing else in this file, in graph-document.schema.json, or in examples.json is coupled to a rendering technology. If you will run more than one frontend against the same registry, move these two fields into a sibling `renderers: { vue: {...}, react: {...} }` map keyed by type; with a single frontend, leaving them inline is fine.",
+  "$comment": "Domain configuration only. Defines what a node type IS: its port topology, arity rules, containment rules, and the shape of its opaque data payload. The only place domain vocabulary is allowed to appear.",
+  "$comment-scope": "Deliberately absent: any reference to a rendering technology, component name, icon set, colour, shape, or layout hint. Those are consumer concerns and belong in a separate binding file owned by whichever presentation layer is in use, keyed by the same type names. This file must be usable by a backend with no renderer present at all.",
+  "$comment-mermaid": "Also absent: the Mermaid bracket, arrow and cardinality tables. Those are import-adapter data, not domain configuration — see mermaid-import.map.json. Same reasoning: the domain does not know that Mermaid exists.",
 
   "rulesets": {
     "flowchart": {
@@ -43,7 +44,6 @@
       "abstract": true,
       "label": "Node",
       "category": "core",
-      "component": "GenericNode",
       "allowsChildren": true,
       "ports": {
         "in":  { "direction": "in",  "arity": { "min": 0, "max": null } },
@@ -56,8 +56,6 @@
       "extends": "core.node",
       "label": "Group",
       "category": "core",
-      "component": "GroupNode",
-      "icon": "frame",
       "allowsChildren": true,
       "ports": {
         "in":  { "direction": "in",  "arity": { "min": 0, "max": null } },
@@ -68,23 +66,21 @@
         "properties": {
           "layout": {
             "type": "object",
+            "$comment": "A layout preference carried as opaque payload for consumers that want it. The domain never reads it.",
             "properties": {
               "direction": { "type": "string", "enum": ["TB", "TD", "BT", "LR", "RL"] }
             }
           }
         }
-      },
-      "mermaid": { "flowchart": { "construct": "subgraph" } }
+      }
     },
 
     "core.portal": {
       "extends": "core.node",
       "label": "Portal",
       "category": "core",
-      "component": "PortalNode",
-      "icon": "arrow-right-circle",
       "allowsChildren": false,
-      "$comment": "Binds an interior endpoint to a port on its own parent, so no edge ever crosses a containment boundary (INV-5). Created by the importer during normalisation; optionally user-creatable.",
+      "$comment": "Binds an interior endpoint to a port on its own parent, so no edge ever crosses a containment boundary (INV-5). Created by the import adapter during normalisation; optionally user-creatable.",
       "ports": {
         "link": { "direction": "inout", "role": "portal", "arity": { "min": 0, "max": 1 } }
       },
@@ -102,17 +98,23 @@
       "extends": "core.node",
       "label": "Branch",
       "category": "core",
-      "component": "BranchNode",
-      "icon": "git-branch",
       "allowsChildren": true,
-      "$comment": "Inserted automatically when a user connects a second edge to an out-port whose arity.max is 1. Because allowsChildren is true it is already a subgraph the moment it is expanded — no conversion step, no id churn.",
+      "$comment": "Inserted when a second edge is connected to an out-port whose arity.max is 1. Because allowsChildren is true it is already a subgraph the moment it is expanded — no conversion step, no id churn. `origin` governs auto-collapse: an editor-inserted branch that stops branching is removed again; an authored one never is. See design doc 8.1.",
       "ports": {
         "in":  { "direction": "in",  "arity": { "min": 1, "max": null } },
         "out": { "direction": "out", "arity": { "min": 0, "max": null }, "group": true }
       },
       "dataSchema": {
         "type": "object",
-        "properties": { "condition": { "type": "string" } }
+        "properties": {
+          "condition": { "type": "string" },
+          "origin": {
+            "type": "string",
+            "enum": ["auto", "authored"],
+            "default": "authored",
+            "description": "auto means the editor inserted this to satisfy an arity rule, so it may be collapsed silently when it stops branching. authored means the user placed it and it is never auto-removed. Default is authored: anything that does not declare itself is treated as content."
+          }
+        }
       }
     },
 
@@ -128,41 +130,32 @@
       "extends": "core.node",
       "label": "Process",
       "category": "flowchart",
-      "component": "FlowProcessNode",
-      "icon": "square",
       "ports": {
         "in":  { "direction": "in",  "arity": { "min": 0, "max": null } },
         "out": { "direction": "out", "arity": { "min": 0, "max": 1 } }
-      },
-      "mermaid": { "flowchart": { "open": "[", "close": "]" } }
+      }
     },
 
     "flow.rounded": {
       "extends": "flow.process",
       "label": "Rounded process",
-      "category": "flowchart",
-      "mermaid": { "flowchart": { "open": "(", "close": ")" } }
+      "category": "flowchart"
     },
 
     "flow.terminal": {
       "extends": "core.node",
       "label": "Terminal",
       "category": "flowchart",
-      "component": "FlowTerminalNode",
-      "icon": "circle",
       "ports": {
         "in":  { "direction": "in",  "arity": { "min": 0, "max": null } },
         "out": { "direction": "out", "arity": { "min": 0, "max": 1 } }
-      },
-      "mermaid": { "flowchart": { "open": "([", "close": "])" } }
+      }
     },
 
     "flow.decision": {
       "extends": "core.node",
       "label": "Decision",
       "category": "flowchart",
-      "component": "FlowDecisionNode",
-      "icon": "diamond",
       "ports": {
         "in":    { "direction": "in",  "arity": { "min": 1, "max": null } },
         "true":  { "direction": "out", "role": "true",  "arity": { "min": 0, "max": 1 } },
@@ -171,37 +164,29 @@
       "dataSchema": {
         "type": "object",
         "properties": { "expression": { "type": "string" } }
-      },
-      "mermaid": { "flowchart": { "open": "{", "close": "}" } }
+      }
     },
 
     "flow.datastore": {
       "extends": "core.node",
       "label": "Datastore",
       "category": "flowchart",
-      "component": "FlowDatastoreNode",
-      "icon": "database",
       "ports": {
         "in":  { "direction": "in",  "arity": { "min": 0, "max": null } },
         "out": { "direction": "out", "arity": { "min": 0, "max": null } }
-      },
-      "mermaid": { "flowchart": { "open": "[(", "close": ")]" } }
+      }
     },
 
     "flow.subroutine": {
       "extends": "flow.process",
       "label": "Subroutine",
-      "category": "flowchart",
-      "icon": "box-multiple",
-      "mermaid": { "flowchart": { "open": "[[", "close": "]]" } }
+      "category": "flowchart"
     },
 
     "flow.io": {
       "extends": "flow.process",
       "label": "Input / output",
-      "category": "flowchart",
-      "icon": "parallelogram",
-      "mermaid": { "flowchart": { "open": "[/", "close": "/]" } }
+      "category": "flowchart"
     },
 
     "flow.link": {
@@ -216,8 +201,6 @@
       "extends": "core.node",
       "label": "Participant",
       "category": "sequence",
-      "component": "SeqParticipantNode",
-      "icon": "layout-columns",
       "allowsChildren": false,
       "ports": {
         "lane": { "direction": "inout", "arity": { "min": 0, "max": null } }
@@ -225,25 +208,21 @@
       "dataSchema": {
         "type": "object",
         "properties": { "isActor": { "type": "boolean", "default": false } }
-      },
-      "mermaid": { "sequenceDiagram": { "construct": "participant" } }
+      }
     },
 
     "seq.actor": {
       "extends": "seq.participant",
       "label": "Actor",
-      "category": "sequence",
-      "icon": "user",
-      "mermaid": { "sequenceDiagram": { "construct": "actor" } }
+      "category": "sequence"
     },
 
     "seq.block": {
       "extends": "core.group",
       "label": "Block",
       "category": "sequence",
-      "component": "SeqBlockNode",
       "allowsChildren": true,
-      "$comment": "Children are edges, not nodes. Needed no new machinery because containment is uniform across both collections.",
+      "$comment": "Children are edges, not nodes. Needed no new machinery because containment is uniform across both collections. Note the INV-7 consequence: a purge guard that counts only node children will wrongly report this as purgeable.",
       "dataSchema": {
         "type": "object",
         "required": ["blockType"],
@@ -263,15 +242,13 @@
             }
           }
         }
-      },
-      "mermaid": { "sequenceDiagram": { "construct": "block" } }
+      }
     },
 
     "seq.note": {
       "extends": "core.node",
       "label": "Note",
       "category": "sequence",
-      "component": "SeqNoteNode",
       "allowsChildren": false,
       "ports": {},
       "dataSchema": {
@@ -281,8 +258,7 @@
           "placement": { "type": "string", "enum": ["left", "right", "over"] },
           "anchors": { "type": "array", "items": { "type": "string" }, "maxItems": 2 }
         }
-      },
-      "mermaid": { "sequenceDiagram": { "construct": "note" } }
+      }
     },
 
     "seq.message": {
@@ -296,16 +272,13 @@
           "activate": { "type": "boolean", "default": false },
           "deactivate": { "type": "boolean", "default": false }
         }
-      },
-      "mermaid": { "sequenceDiagram": { "construct": "message" } }
+      }
     },
 
     "er.entity": {
       "extends": "core.node",
       "label": "Entity",
       "category": "er",
-      "component": "ErEntityNode",
-      "icon": "table",
       "allowsChildren": false,
       "$comment": "Attributes live in data, not as child nodes, because they are not independently connectable. To wire FK to PK later, generate one instance port per attribute — data.attributes stays the source of truth, ports become the connection surface, no schema change needed.",
       "ports": {
@@ -331,8 +304,7 @@
             }
           }
         }
-      },
-      "mermaid": { "erDiagram": { "construct": "entity" } }
+      }
     },
 
     "er.relationship": {
@@ -366,16 +338,13 @@
           },
           "identifying": { "type": "boolean", "default": true }
         }
-      },
-      "mermaid": { "erDiagram": { "construct": "relationship" } }
+      }
     },
 
     "story.act": {
       "extends": "core.group",
       "label": "Act",
       "category": "story",
-      "component": "StoryActNode",
-      "icon": "folder",
       "allowsChildren": true,
       "allowedChildTypes": ["story.scene", "story.split", "story.act", "core.portal"],
       "$comment": "An Act is simply a node with children (D4). Nothing container-specific was required. Remove story.act from allowedChildTypes if the domain forbids nesting Acts — that is a registry rule, not a core constraint.",
@@ -392,8 +361,6 @@
       "extends": "core.node",
       "label": "Scene",
       "category": "story",
-      "component": "StorySceneNode",
-      "icon": "file-text",
       "allowsChildren": true,
       "ports": {
         "in":  { "direction": "in",  "arity": { "min": 0, "max": null } },
@@ -416,13 +383,12 @@
       "extends": "core.branch",
       "label": "Path split",
       "category": "story",
-      "component": "StorySplitNode",
-      "icon": "git-branch",
       "allowsChildren": true,
       "ports": {
         "in":  { "direction": "in",  "arity": { "min": 1, "max": null } },
         "out": { "direction": "out", "arity": { "min": 0, "max": null }, "group": true }
       },
+      "$comment-dataSchema": "dataSchema does NOT merge along the extends chain — each type declares its complete payload shape. `origin` is therefore repeated from core.branch rather than inherited. Ports do merge; dataSchema deliberately does not, so a subtype can narrow its parent's payload rather than only widen it.",
       "dataSchema": {
         "type": "object",
         "properties": {
@@ -431,79 +397,16 @@
             "type": "string",
             "enum": ["exclusive", "parallel"],
             "default": "exclusive",
-            "description": "exclusive means the reader takes one path. parallel means concurrent threads, in which case rank between the branches is meaningless — see design doc open question 4."
+            "description": "exclusive means one path is taken. parallel means concurrent threads, in which case rank between the branches is meaningless — see design doc open question 4."
+          },
+          "origin": {
+            "type": "string",
+            "enum": ["auto", "authored"],
+            "default": "authored",
+            "description": "See core.branch. Governs whether this split is collapsed automatically when it stops branching."
           }
         }
-      },
-      "mermaid": { "flowchart": { "open": "{", "close": "}" } }
-    }
-  },
-
-  "mermaidImport": {
-    "$comment": "Table-driven so the importer contains no per-shape branching. shapeMatchOrder must be tried in array order: two-character delimiters before one-character, or '[[' is misread as '[' and the label keeps a stray bracket.",
-    "flowchart": {
-      "shapeMatchOrder": [
-        { "open": "(((", "close": ")))", "type": "flow.terminal" },
-        { "open": "[[",  "close": "]]",  "type": "flow.subroutine" },
-        { "open": "[(",  "close": ")]",  "type": "flow.datastore" },
-        { "open": "([",  "close": "])",  "type": "flow.terminal" },
-        { "open": "[/",  "close": "/]",  "type": "flow.io" },
-        { "open": "[\\", "close": "\\]", "type": "flow.io" },
-        { "open": "[/",  "close": "\\]", "type": "flow.io" },
-        { "open": "{{",  "close": "}}",  "type": "flow.process" },
-        { "open": "((",  "close": "))",  "type": "flow.terminal" },
-        { "open": "{",   "close": "}",   "type": "flow.decision" },
-        { "open": "(",   "close": ")",   "type": "flow.rounded" },
-        { "open": ">",   "close": "]",   "type": "flow.process" },
-        { "open": "[",   "close": "]",   "type": "flow.process" }
-      ],
-      "edgeMatchOrder": [
-        { "token": "~~~",  "line": "invisible", "arrowEnd": "none" },
-        { "token": "-.->", "line": "dashed",    "arrowEnd": "arrow" },
-        { "token": "-.-",  "line": "dashed",    "arrowEnd": "none" },
-        { "token": "==>",  "line": "thick",     "arrowEnd": "arrow" },
-        { "token": "===",  "line": "thick",     "arrowEnd": "none" },
-        { "token": "-->",  "line": "solid",     "arrowEnd": "arrow" },
-        { "token": "--o",  "line": "solid",     "arrowEnd": "circle" },
-        { "token": "--x",  "line": "solid",     "arrowEnd": "cross" },
-        { "token": "<-->", "line": "solid",     "arrowEnd": "arrow", "arrowStart": "arrow" },
-        { "token": "---",  "line": "solid",     "arrowEnd": "none" }
-      ],
-      "directives": {
-        "classDef": "ext:org.mermaid.style",
-        "class": "ext:org.mermaid.style",
-        "linkStyle": "ext:org.mermaid.style",
-        "click": "ext:org.mermaid.interaction",
-        "init": "ext:org.mermaid.config"
       }
-    },
-    "sequenceDiagram": {
-      "arrowMatchOrder": [
-        { "token": "-->>", "line": "dashed", "arrowEnd": "arrow" },
-        { "token": "->>",  "line": "solid",  "arrowEnd": "arrow" },
-        { "token": "--x",  "line": "dashed", "arrowEnd": "cross" },
-        { "token": "-x",   "line": "solid",  "arrowEnd": "cross" },
-        { "token": "--)",  "line": "dashed", "arrowEnd": "async" },
-        { "token": "-)",   "line": "solid",  "arrowEnd": "async" },
-        { "token": "-->",  "line": "dashed", "arrowEnd": "none" },
-        { "token": "->",   "line": "solid",  "arrowEnd": "none" }
-      ],
-      "blockKeywords": ["alt", "else", "opt", "loop", "par", "and", "critical", "option", "break", "rect"]
-    },
-    "erDiagram": {
-      "cardinalityLeft": {
-        "||": "one",
-        "|o": "zeroOrOne",
-        "}o": "zeroOrMany",
-        "}|": "oneOrMany"
-      },
-      "cardinalityRight": {
-        "||": "one",
-        "o|": "zeroOrOne",
-        "o{": "zeroOrMany",
-        "|{": "oneOrMany"
-      },
-      "identifying": { "--": true, "..": false }
     }
   },
 
@@ -511,7 +414,6 @@
     "branchOnFanOut": false,
     "$comment": "Default off so an import never silently restructures the source graph. Offer branch insertion as an explicit user action instead.",
     "insertBoundaryPortals": true,
-    "rekeyCollisions": true,
-    "emitViewEntries": false
+    "rekeyCollisions": true
   }
 }

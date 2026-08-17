@@ -1,8 +1,14 @@
 # Graph document model
 
-A JSON model for a Vue-based graph-node editor that also ingests Mermaid `flowchart`, `sequenceDiagram` and `erDiagram` sources.
+A data and domain model for a graph-node editor that also ingests Mermaid `flowchart`, `sequenceDiagram` and `erDiagram` sources.
 
-Version 1.0.0 (draft) · Schema: `graph-document.schema.json` · Registry: `node-types.registry.json` · Examples: `examples.json`
+Version 1.0.0 (draft) · Schema: `graph-document.schema.json` · Registry: `node-types.registry.json` · Import map: `mermaid-import.map.json` · Examples: `examples.json` · Validator: `validate.mjs`
+
+**Scope.** This document describes structure only. It names no rendering technology, no state-management library and no layout engine, because none of them are domain concerns. Where a consumer has an obligation, it is stated as a contract (§16) rather than as an implementation.
+
+**Out of scope, deliberately:** undo, redo, change attribution, audit trails and concurrent editing. No field exists to support any of them.
+
+**Layering:** see `architecture-onion.md` for which ring each piece belongs to. Two corrections it makes to this document: the JSON Schema is infrastructure rather than the domain model, and the Mermaid mapping tables are adapter data rather than registry configuration.
 
 ---
 
@@ -23,7 +29,7 @@ The resolution is a thin, kind-agnostic core plus a **declarative type registry*
 
 | # | Decision | Rationale |
 |---|---|---|
-| D1 | Nodes and edges are **maps keyed by id**, not arrays | O(1) lookup; ids cannot duplicate by construction; JSON Patch paths are stable (`/nodes/{id}/label`), giving undo/redo and collaborative edits nearly free. Array indices make every patch path reorder-fragile. |
+| D1 | Nodes and edges are **maps keyed by id**, not arrays | O(1) lookup by id, which is how every operation reaches a record. Ids cannot duplicate by construction. Reordering siblings touches no keys, because order lives in `rank`. Arrays would make every reference an index that shifts whenever anything is inserted or removed. |
 | D2 | Containment is a **flat map plus `parent` pointer**, never physical nesting | Nesting subgraphs inside node JSON makes reparenting a move-subtree operation and lookup a tree walk. A `parent` pointer makes reparenting one field write and containment a derived index. |
 | D3 | Edges connect **ports**, not nodes directly | A path-split needs distinguishable outputs. A decision needs true/false ports. Node-only endpoints force you to encode this in labels, which is unqueryable. |
 | D4 | Every node may have children | Directly satisfies "every node can expand to a subgraph" with zero type machinery. An Act containing Scenes and a `core.branch` becoming a subgraph are the same mechanism. |
@@ -45,7 +51,7 @@ The resolution is a thin, kind-agnostic core plus a **declarative type registry*
   "kind": "flowchart",
   "title": "Checkout request path",
   "meta": {
-    "layout": { "direction": "LR", "engine": "dagre" },
+    "layout": { "direction": "LR" },
     "createdAt": "2026-08-17T09:00:00Z",
     "updatedAt": "2026-08-17T09:14:22Z",
     "revision": 42
@@ -93,9 +99,9 @@ Note what is absent: no `roots` array (derive from `parent === null`), no adjace
 
 Every field here is either identity, topology, or opaque payload. There are no coordinates, no colours, no collapsed flag — those are in `view` (§5).
 
-**`type`** resolves into the registry, which supplies default ports, palette entry, Vue component, a JSON Schema for `data`, and the Mermaid mapping. Instance `ports` *override or extend* registry defaults — omit the field and defaults apply. This is what lets an ER entity grow a port per attribute at runtime without a new type.
+**`type`** resolves into the registry, which supplies default ports, containment rules, the type's vocabulary, and a JSON Schema for `data`. Instance `ports` *override or extend* registry defaults — omit the field and defaults apply. This is what lets an ER entity grow a port per attribute at runtime without a new type.
 
-**`data`** is the domain payload, validated against the type's `dataSchema`. A `story.scene` puts its prose, characters and beat list here. The editor treats it as an opaque blob and renders it via a registered component.
+**`data`** is the domain payload, validated against the type's `dataSchema`. A `story.scene` puts its prose, characters and beat list here. Everything outside the type's own renderer treats it as an opaque value.
 
 **`ext`** is for consumers other than core — plugins, integrations, your own app services. Namespaced to prevent collisions:
 
@@ -137,10 +143,10 @@ O(E) on a document you already hold in memory. For a story graph — hundreds of
 
 | Tier | Examples | Where it lives | Lifecycle |
 |---|---|---|---|
-| **Structure** | `id`, `type`, `parent`, `rank`, `ports`, edge endpoints, `state` | `nodes` / `edges` | The graph itself. Every mutation is semantically meaningful and undoable. |
+| **Structure** | `id`, `type`, `parent`, `rank`, `ports`, edge endpoints, `state` | `nodes` / `edges` | The graph itself. Every mutation changes what the map means. |
 | **Payload** | Scene prose, Act summary, ER attributes, message text | `node.data` / `edge.data` | Domain content. Opaque to the editor, validated by the type's schema. |
-| **Authored presentation** | `x`, `y`, `w`, `h`, `collapsed`, `lockChildren`, colour overrides, edge waypoints | `view.nodes` / `view.edges` | Deliberate, persisted, shared, undoable — but regenerable and semantically inert. |
-| **Session state** | viewport pan/zoom, selection, active tool, hover, inspector tab | Pinia store + `localStorage` | Never in the document. Meaningless without the app open. |
+| **Authored presentation** | `x`, `y`, `w`, `h`, `collapsed`, `lockChildren`, colour overrides, edge waypoints | `view.nodes` / `view.edges` | Deliberate and persisted, but regenerable and semantically inert. |
+| **Session state** | viewport pan/zoom, selection, active tool, hover, inspector tab | Consumer's own ephemeral store | Never in the document. Meaningless without the app open. |
 
 The two-tier instinct ("structure plus metadata") collapses the middle two, and that is where the pain is.
 
@@ -148,7 +154,7 @@ The two-tier instinct ("structure plus metadata") collapses the middle two, and 
 
 Five concrete reasons, in rough order of how much they will bite you:
 
-1. **Write frequency differs by three orders of magnitude.** Dragging a node emits coordinate writes at frame rate. Editing a Scene's prose emits one write. On the same record, every drag dirties the domain record, floods the JSON Patch log, and wakes up payload-level reactivity and validation. Separated, you can throttle, coalesce, or exclude geometry from the undo stack entirely without touching structure handling.
+1. **Write frequency differs by three orders of magnitude.** Dragging a node emits coordinate writes at frame rate. Editing a Scene's prose emits one write. On the same record, every drag dirties the domain record and wakes up payload-level validation. Separated, you can throttle or coalesce geometry writes, or skip validating them at all, without touching how structure is handled.
 
 2. **Diffs stay meaningful.** If you ever persist documents in git — and for a story graph you probably should — geometry churn drowns the semantic diff. "Moved 40 nodes and changed one Scene" should not look like a 41-node change. Separated collections let you diff `nodes` alone.
 
@@ -179,7 +185,7 @@ Five concrete reasons, in rough order of how much they will bite you:
 Properties of this arrangement:
 
 - **Same file, separable later.** One document, one fetch, one save — simple now. When you want `view` in its own table, row, or per-user file, you move a subtree and change nothing in `nodes`.
-- **Every entry is optional.** A node with no `view` entry is unpositioned; the layout engine assigns coordinates. Import produces zero `view` entries and lets dagre place everything, which is exactly right for Mermaid sources that carry no coordinates.
+- **Every entry is optional.** A node with no `view` entry is unpositioned, and the consumer's layout pass assigns coordinates. Import produces zero `view` entries, which is exactly right for Mermaid sources that carry no coordinates.
 - **Garbage collection is a real obligation.** `purge(node)` must delete `view.nodes[id]`. Add an integrity check that reports orphaned `view` keys; they are harmless but they accumulate.
 
 The cost is honest: two lookups instead of one, and a cleanup rule. In exchange you get four of the five benefits above permanently and the fifth cheaply.
@@ -207,36 +213,39 @@ story.split    one in-port, N out-ports  (your Path-split)
 
 Note where these land in the existing model rather than needing new concepts: an Act is a node with children (D4). A Path-split is `core.branch` with a domain label and its own `dataSchema` — and because every node can contain children, a Path-split expands into a subgraph the moment a user asks, with no conversion step and no id churn.
 
-The discipline that keeps the editor agnostic is testable: **grep the editor package for `scene`, `act` and `split`. Zero hits, or you have leaked.** Domain vocabulary appears in the registry JSON, in Vue components registered by name, and nowhere else. The editor knows only that `type` is a string it can resolve.
+The discipline is testable: **grep any consumer package for `scene`, `act` and `split`. Zero hits, or you have leaked.** Domain vocabulary appears in the registry JSON, in the consumer's own type-to-renderer binding table, and nowhere else. Everything else knows only that `type` is a string it can resolve.
 
 ### 5.7 The boundary, stated precisely
 
 "Metadata is *how* to render, `data` is *what* to render" is the right instinct. Two refinements make it hold up in code.
 
-**Split presentation by scope: class-level goes in the registry, instance-level goes in `view`.**
+**Split by scope: class-level facts go in the registry, instance-level facts go in `view`.**
 
 | Question | Scope | Home |
 |---|---|---|
-| What shape is a Scene? Which icon? Which Vue component? Which ports? | All Scenes | Registry, keyed by `type` |
+| What ports does a Scene have? What may it contain? What shape is its `data`? | All Scenes | Registry, keyed by `type` |
 | Where is *this* Scene? How wide did the user drag it? Is it collapsed? Are its children pinned? | One node | `view.nodes[id]` |
 
-The test: **if changing it should change every node of that type, it belongs in the registry.** Put shape or colour on the node instance and you will be writing a migration the first time someone wants all Splits to look different.
+The test: **if changing it should change every node of that type, it belongs in the registry.** Put per-type facts on the node instance and you will be writing a migration the first time one of them changes.
 
-**The mechanism that actually makes "what to render" agnostic is the editor-to-component contract.** The editor resolves `type` → registry → component name, mounts that component, and hands it `data` as an opaque prop. The editor never inspects `data`'s interior; the component is the only code that understands it. That single boundary is what keeps the editor from knowing what a Scene is:
+Class-level facts that are purely visual — which widget draws a Scene, which icon, which colour — are **neither**. They belong to whichever consumer is doing the drawing, in a binding file that consumer owns, keyed by the same type names. The registry must remain usable by a backend with no renderer present at all, so it carries no such field.
+
+**The mechanism that makes "what to render" agnostic is the type-indirection contract.** A consumer resolves `type` through the registry to get structure, resolves the same `type` through its own binding table to get a renderer, and passes `data` to that renderer as an opaque value. Nothing between the document and the renderer inspects `data`'s interior:
 
 ```
-editor:     type → registry.component → <StorySceneNode :data="node.data" />
-component:  reads data.prose, data.characters, data.beats
-editor:     reads none of it, ever
+consumer:  type → registry        → ports, containment rules, data schema
+consumer:  type → own bindings    → renderer for this type
+renderer:  reads data.prose, data.characters, data.beats
+everything else: reads none of it, ever
 ```
 
-Everything the editor needs to lay out and wire the graph is in `nodes`, `edges` and `view`. Everything it must not understand is in `data`. If you ever find the editor reaching into `data` to make a layout decision, that is the leak — hoist whatever it needed into `view` or the registry.
+Everything needed to lay out and wire the graph is in `nodes`, `edges` and `view`. Everything that must not be understood is in `data`. If anything outside a type's own renderer reaches into `data` to make a decision, that is the leak — hoist whatever it needed into `view` or the registry.
 
 **Two caveats worth deciding up front:**
 
 *`label` is a deliberate exception.* Strictly it is "what to render", but the editor legitimately needs one human-readable string per node — for search, breadcrumbs, minimap text, a collapsed container's title, and accessibility names. Keeping it core avoids the editor reaching into `data` for a display name, which would breach the contract above. Document it as an exception rather than letting it become a precedent: `label` is core, everything else about content is not.
 
-*Size is often derived from `data`, so store it only when overridden.* A Scene's height depends on how much prose it holds; an ER entity's height depends on attribute count. If `view` always carries `w`/`h`, authored values and intrinsic values fight, and stale sizes survive content edits. Rule: **omit `w`/`h` unless the user explicitly resized the node.** Absent means "measure me" — the component reports its intrinsic size and layout uses that. Present means "the user overrode this, respect it". Same pattern for `x`/`y`: absent means unplaced, so the layout engine assigns, which is exactly what a fresh Mermaid import produces.
+*Size is often derived from `data`, so store it only when overridden.* A Scene's height depends on how much prose it holds; an ER entity's height depends on attribute count. If `view` always carries `w`/`h`, authored values and intrinsic values fight, and stale sizes survive content edits. Rule: **omit `w`/`h` unless the user explicitly resized the node.** Absent means "measure me" — the renderer reports its intrinsic size and the layout pass uses that. Present means "the user overrode this, respect it". Same pattern for `x`/`y`: absent means unplaced, which is exactly what a fresh Mermaid import produces.
 
 ---
 
@@ -300,9 +309,9 @@ A portal is an ordinary node of type `core.portal` with `data: { port: "in", dir
 
 Why the extra node is worth it:
 
-- **Collapse and expand become pure view operations.** `view.nodes[id].collapsed = true` hides children. Zero edges rewritten, zero ids changed, and because it is a `view` write it need not even enter the structural undo stack. With boundary-crossing edges you must re-anchor every crossing edge on collapse and reconcile on expand.
+- **Collapse and expand become pure view operations.** `view.nodes[id].collapsed = true` hides children. Zero edges rewritten, zero ids changed, and because it is a `view` write it does not touch the document at all. With boundary-crossing edges you must re-anchor every crossing edge on collapse and reconcile on expand.
 - **Validation is local** — one parent comparison, not two ancestor walks.
-- **Layout is recursive and independent.** Run dagre per level and compose.
+- **Layout is recursive and independent.** Each container can be laid out per level and composed, with no knowledge of the outside.
 - **It matches user expectation** from Node-RED, n8n, Blender and Unreal: subgraph inputs and outputs are visible objects you can wire and reorder.
 
 The cost is that the Mermaid importer must synthesise portals, because Mermaid draws boundary-crossing edges freely. One-time normalisation pass, §12.
@@ -322,6 +331,52 @@ Your intermediate-node idea is best expressed as an **arity policy**:
 `story.split` is an ordinary node — one in-port, N out-ports, unbounded. Because every node can contain children (D4), **it is already a subgraph the moment the user expands it.** No conversion, no type change, no id churn.
 
 Set `arity.max: null` to allow bare fan-out with no intermediate node. The behaviour is per-type and declared in the registry, so `story.scene` can require splits while `seq.participant` allows unlimited messages.
+
+### 8.1 Auto-collapse: the inverse operation
+
+If the editor inserted the split, the editor removes it. A split that no longer branches is machinery with nothing to do, and leaving it behind means the graph carries a hop the user never asked for and cannot explain.
+
+What makes this safe rather than surprising is **provenance**: `data.origin` distinguishes a split the editor created from one the user built.
+
+| `origin` | Meaning | On losing its branch |
+|---|---|---|
+| `"auto"` | Editor inserted it to satisfy an arity rule | Collapse silently. The user never authored it, so removing it restores the shape they would have had. |
+| `"authored"` | User placed it deliberately | Never auto-remove. Surface a lint and let them decide. |
+
+Default is `"authored"`, so anything that fails to declare itself is treated as content.
+
+**Collapse rule**, applied on transaction commit:
+
+```
+if type extends core.branch
+   and data.origin === "auto"
+   and childCount === 0                    -- nodes AND edges
+   and ext is empty
+   and no detached incident edges
+   and no authored data (condition, label, non-default mode)
+then
+   activeIn === 1 and activeOut === 1  →  splice: inEdge.to = outEdge.to,
+                                          delete outEdge, purge split
+   activeIn === 1 and activeOut === 0  →  delete inEdge, purge split
+   activeIn === 0                      →  purge split and any remaining edge
+```
+
+The splice cannot violate arity: the upstream out-port was already occupied by `inEdge`, and retargeting an existing edge leaves the count unchanged. It also cannot cross a containment boundary, because INV-5 guaranteed the split and both neighbours share a parent.
+
+**Three preconditions that exist for concrete reasons, not caution:**
+
+- **`ext` must be empty.** A collapse mints no new id — it destroys one. Any plugin annotation on that split (costings, review notes, external references) dies with it, silently, and the user has no way to know a third party had attached something.
+- **No detached incident edges.** Detached means retrievable. Collapsing a split that holds parked wiring destroys a connection the user explicitly chose to keep.
+- **No children.** A split with children is a subgraph with one exit, which is a legitimate authored shape rather than a degenerate one.
+
+**Two implementation hazards worth designing against:**
+
+1. **Thrash and id churn.** Insert fires at out-degree 1 → 2; collapse fires at 2 → 1. A drag that momentarily disconnects and reconnects will therefore destroy and recreate a split, with a new id each time. Run collapse **only when the operation completes**, never on intermediate states, and treat a disconnect-then-reconnect within one gesture as a single operation.
+2. **The collapse is irreversible.** With no undo stack, the preconditions above are the *only* safety net — there is no recovery if the rule fires when it should not have. That argues for keeping them strict rather than loosening them later for convenience, and for making the reverse action cheap: reconnecting a second edge re-inserts a split, so the user is never stuck, only mildly inconvenienced.
+
+For `origin: "authored"` splits, fall back to a derived lint. `degenerateNodes()` joins `childrenOf` / `edgesOf` / `degreeOf` as a computed index — never a stored flag — covering both in ≤ 1 and out ≤ 1 so it also catches an orphaned pass-through when the upstream edge is the one removed.
+
+Note that "is this a subgraph" is `childCount > 0`, not a boolean field. Nothing can drift out of sync with reality, which is what makes the precondition above free to evaluate (D8).
 
 For import this is a switch, defaulting off:
 
@@ -377,6 +432,8 @@ One semantic decision embedded in the checker: **detached edges do not consume p
 
 Traversals default to `state === "active"`. Detached nodes deserve a real UI affordance — a tray or parked panel — not a hidden state users must remember.
 
+With no undo stack, `detached` is the **only** safety net in the model: it is the one removal a user can walk back. That makes the split between `detach` (recoverable) and `disconnect` / `purge` (permanent) the most important boundary in the interface, not just in the data. Default the obvious gesture — pressing delete, dragging a node off the canvas — to `detach`, and make `purge` deliberate and separately confirmed.
+
 ---
 
 ## 11. Ordering: fractional ranks
@@ -388,7 +445,7 @@ initial:   a0        b0        c0
 insert between a0 and b0  →  "a0V"
 ```
 
-Sibling order = sort by `rank`, tiebreak by `id`. Inserting is one field write; an integer index rewrites every subsequent sibling, producing enormous undo entries and guaranteed conflicts under concurrent editing.
+Sibling order = sort by `rank`, tiebreak by `id`. Inserting is one field write; an integer index rewrites every subsequent sibling, turning a one-node insert into an N-node write.
 
 Where it matters:
 
@@ -475,14 +532,14 @@ One rule to keep it honest: **`source` is write-once at import and never updated
 
 ## 14. Node type registry
 
-The registry is why the editor can be agnostic. It is data — shippable as JSON, extensible by users.
+The registry is why consumers can be agnostic. It is data — shippable as JSON, extensible by users, and loadable by a service with no renderer present at all.
 
 ```json
 "story.split": {
   "extends": "core.branch",
   "label": "Path split",
   "category": "story",
-  "component": "StorySplitNode",
+  "allowsChildren": true,
   "ports": {
     "in":  { "direction": "in",  "arity": { "min": 1, "max": null } },
     "out": { "direction": "out", "arity": { "min": 0, "max": null }, "group": true }
@@ -490,13 +547,18 @@ The registry is why the editor can be agnostic. It is data — shippable as JSON
   "dataSchema": {
     "type": "object",
     "properties": { "condition": { "type": "string" } }
-  },
-  "allowsChildren": true,
-  "mermaid": { "flowchart": { "open": "{", "close": "}" } }
+  }
 }
 ```
 
-One descriptor drives five things: palette entry, Vue component, port topology, `data` validation, and Mermaid mapping. Adding a node type is a JSON edit plus optionally a component — no editor changes, which is what "agnostic but customisable" has to mean in practice.
+One descriptor drives four things: port topology, containment rules, `data` validation, and the type's vocabulary. Adding a node type is a JSON edit — no code changes anywhere, which is what "agnostic but customisable" has to mean in practice.
+
+Two things the registry deliberately does **not** carry, both excluded on the same principle:
+
+- **Rendering bindings** — which widget, icon or colour draws a type. Consumer-owned, in a binding table keyed by the same type names, in a file the domain never loads.
+- **Mermaid bracket, arrow and cardinality tables** — these live in `mermaid-import.map.json`, owned by the import adapter. The domain does not know that Mermaid exists; only the adapter translating it does.
+
+Both were in the registry in an earlier draft. Removing them is the difference between a registry a backend service can consume directly and one that implicitly assumes a browser.
 
 `allowsChildren` defaults to `true` (D4). Set it `false` only where expansion is meaningless, such as `core.portal`.
 
@@ -535,24 +597,32 @@ Enforce core invariants in the reducer, synchronously, on every mutation. Enforc
 
 ---
 
-## 16. Editor notes
+## 16. Consumer obligations
 
-**Undo/redo.** D1 makes JSON Patch the natural mutation log. `[{"op":"replace","path":"/nodes/01JB…/label","value":"Orders"}]` plus its inverse gives unlimited undo with no bespoke command objects, and the same patch stream is what goes on a WebSocket if you add collaboration. Because presentation is a separate subtree, you can filter `/view/**` patches out of the undo stack — or into a separate shallower one — without special-casing fields.
+Stated as contracts rather than implementations. Any consumer — a browser editor, a CLI, a report generator, a backend service — owes the model these five things, and the model owes nothing to any particular technology in return.
 
-**Vue reactivity.** Keep the document in a Pinia store as a plain reactive object. Derive the rest through getters memoised on `meta.revision`:
+**1. Derive indexes; never persist them.** These four are what every consumer needs and none may be stored (D8):
 
 ```
 childrenOf(parentId)   group nodes by parent
 edgesOf(nodeId)        index by from.node / to.node
-degreeOf(nodeId)       drives the purge guard
+degreeOf(nodeId)       incident-edge count; drives the purge guard
 visibleNodes(rootId)   walk containment, stop at collapsed
 ```
 
-Never store these on the document (D8).
+All four are O(N) or O(E) rebuilds over a document already in memory. Cache them keyed on `meta.revision` and invalidate when it changes. A monotonic counter is the entire cache-invalidation strategy — that is why `revision` exists.
 
-**Rendering.** `visibleNodes` plus per-level dagre gives nested layout for free. A collapsed container renders as one box whose visible ports are exactly its portal-bound ports — the payoff from §7.
+**2. Enforce core invariants at the mutation boundary, synchronously.** INV-1 to INV-4, INV-6 to INV-8 and INV-11 must hold after every accepted mutation, so an invalid document is unconstructable rather than merely detectable. Kind rules (INV-5, INV-9, INV-10) may be deferred to save time, because a mid-drag state is allowed to be briefly invalid.
 
-**Validation surface.** Ship the JSON Schema to the frontend and run ajv in the browser as well as the server. Same artefact, same errors, no drift.
+**3. Write atomically.** Invariants span records — an edge refers to two nodes, a parent chain spans many — so a mutation must either fully apply or not apply at all. A half-written document is an invalid one. In practice this means saving the whole `nodes` + `edges` structure as a unit rather than patching individual records in place.
+
+There is deliberately **no mutation log, no undo stack and no change attribution** in this model. Mutate, validate, save. If undo is ever wanted, the id-keyed maps make a structural diff format easy to bolt on later, but nothing here depends on that and no field exists to support it.
+
+**4. Own layout entirely.** The model stores no coordinates in `nodes` and permits absent coordinates in `view`. Deciding where an unplaced node goes, and how a nested container is arranged, is a consumer responsibility. §7's level-local edge rule exists so that this can be done per level and composed, with each container laid out in ignorance of everything outside it.
+
+**5. Validate against the same artefact everywhere.** One schema file, validated on both sides of every boundary. Same errors, no drift between what a client rejects and what a server rejects.
+
+Two payoffs worth noting. A collapsed container renders as a single box whose visible ports are exactly its portal-bound ports, with no edge rewriting (§7). And because `view` is a separate collection, a consumer that has no presentation at all — an importer, a linter, an export job — simply never loads it.
 
 ---
 
@@ -571,7 +641,8 @@ Keep migrations as an ordered list of pure `(doc) => doc` functions keyed by ver
 
 - **Typed ports** (`dataType`). Field exists; leave enforcement out until you need it. Type systems are easy to add and very hard to loosen.
 - **Multi-document references.** Cross-document links turn ids into a global namespace. Get one document right first.
-- **CRDT / OT.** JSON Patch over a flat map is already the right substrate. Do not pay CRDT complexity before you have concurrent editors.
+- **Undo, redo and change attribution.** Explicitly out of scope. No field in the model exists to support them, and none should be added speculatively.
+- **Concurrent editing.** Not designed for. If two people ever edit one map, `meta.revision` is enough for a reject-on-conflict save; anything better is a separate project.
 - **Mermaid export.** §13 keeps it cheap later.
 - **Per-user `view` documents.** D9 makes it a move, not a migration. Wait until someone asks.
 - **Full Mermaid grammar coverage.** Import the constructs above, park the rest in `ext`, report it. An import that silently drops a `classDef` is worse than one that says it skipped three constructs.
@@ -582,48 +653,41 @@ Keep migrations as an ordered list of pure `(doc) => doc` functions keyed by ver
 
 The model is deliberately technology-neutral: it is JSON with all derived data excluded, so nothing in it presumes a rendering stack. Here is the honest audit.
 
-### Fully portable
+### The audit
 
 | Artefact | Coupling |
 |---|---|
+| The model itself | None. No coordinates in nodes, no adjacency, no renderer types, no framework types. |
 | `graph-document.schema.json` | None. Plain JSON Schema 2020-12. |
+| `node-types.registry.json` | None. Structure and vocabulary only; no widget, icon, colour or shape field. |
+| `mermaid-import.map.json` | Coupled to Mermaid **by design** — it is adapter data, and the domain never loads it. |
 | `examples.json` | None. Data. |
-| `node-types.registry.json` | Two opaque keys — see below. |
-| The model itself | None. No coordinates baked into nodes, no adjacency, no framework types. |
+| `validate.mjs` | Node plus ajv. Reference implementation, see below. |
 
-Draft 2020-12 validators exist across every stack you are likely to use: `ajv` (JS), `jsonschema` (Python), `opis/json-schema` and `justinrainbow/json-schema` (PHP), `santhosh-tekuri/jsonschema` (Go), `jsonschema` (Rust), `networknt/json-schema-validator` (Java). Same artefact, same errors, whatever renders it.
+Draft 2020-12 validators exist across every stack: `ajv` (JS), `jsonschema` (Python), `opis/json-schema` and `justinrainbow/json-schema` (PHP), `santhosh-tekuri/jsonschema` (Go), `jsonschema` (Rust), `networknt/json-schema-validator` (Java). One artefact, identical errors, whatever consumes it.
 
-### The two coupled fields
+### Where rendering bindings go instead
 
-`component` and `icon` in the registry are **opaque keys, not imports.** The registry says "render this with the thing called `StorySceneNode`"; which framework resolves that name is entirely the frontend's business:
+A consumer that draws the graph needs to know which widget draws a `story.scene`. That mapping is **the consumer's file, not the model's** — keyed by the same type names, loaded by the consumer alone:
 
 ```
-Vue      { StorySceneNode: defineAsyncComponent(() => import('./StoryScene.vue')) }
-React    { StorySceneNode: StoryScene }
-Svelte   { StorySceneNode: StoryScene }
-native   { StorySceneNode: (props) => new SceneWidget(props) }
+bindings.json (consumer-owned, never loaded by the domain)
+  story.scene  → whatever that consumer renders scenes with
+  story.split  → …
+  core.portal  → …
 ```
 
-If you will ever run two frontends against one registry, move both fields into a sibling `renderers: { vue: {…}, react: {…} }` map keyed by type. With a single frontend, inline is fine and simpler.
+Two consumers can hold two different binding tables against one registry. A consumer with no display — an importer, a linter, an export job — holds none. That is the whole reason the field is not in the registry: putting it there would mean a backend service loading configuration describing a user interface it does not have.
 
-### What is advisory rather than normative
+### Layout is likewise a consumer concern
 
-§16 names Pinia and dagre. Both are examples, and the patterns transfer directly:
-
-| Concern | Vue | Equivalent elsewhere |
-|---|---|---|
-| Reactive document store | Pinia | Redux / Zustand / MobX, Svelte stores, Angular signals, plain observable |
-| Memoised derived indexes | getters keyed on `meta.revision` | selectors, `computed`, `useMemo`, any cache keyed on the same counter |
-| Mutation log | JSON Patch (RFC 6902) | RFC 6902 implementations exist in every language |
-| Layout | dagre | elk.js, d3-hierarchy, Graphviz via WASM, or your own |
-
-The one genuine substitution for a non-web frontend is the layout engine, since dagre and elk are JS. Everything else is arithmetic over a JSON tree.
+The model stores no coordinates in `nodes`, permits absent coordinates in `view`, and guarantees (via §7's level-local edges) that containers can be laid out independently and composed. Which algorithm does that — a layered graph library, a tree layout, a hand-rolled grid, or manual placement only — never appears in a model signature.
 
 ### `validate.mjs` specifically
 
-That file is Node plus ajv, so it is runtime-coupled — but it is **tooling and backend, not frontend**. Its logic is roughly 150 lines of plain graph algorithms over maps: no framework, no async, no DOM. Porting it to PHP for your backend is mechanical, and given your stack that is probably where it belongs — schema validation via `opis/json-schema`, the INV-1 to INV-11 checks as a straight transcription. Run it on every write, and in CI against fixtures.
+Node plus ajv, so it is runtime-coupled — but it is **tooling, not a consumer of the model at runtime**. Its logic is roughly 150 lines of plain graph algorithms over maps: no framework, no async, no DOM, no rendering. Treat it as a reference implementation and transcribe it into whatever runs your writes; schema validation via `opis/json-schema` plus the INV-1 to INV-11 checks is a direct port. Run it on every write and in CI against fixtures.
 
-The Mermaid importer is the one place I would keep Node, at least initially. Rather than reimplementing the grammar in PHP, run `mermaid`'s own parser in a small Node sidecar or a queue worker that consumes `.mmd` and emits a document conforming to this schema. You get grammar fidelity for free and the coupling stays behind one interface.
+The Mermaid importer is the one place worth keeping Node initially. Rather than reimplementing the grammar, run Mermaid's own parser in a sidecar or queue worker that consumes `.mmd` and emits a document conforming to this schema. Grammar fidelity for free, and the coupling stays behind the one interface that is allowed to know Mermaid exists.
 
 ---
 
@@ -631,6 +695,6 @@ The Mermaid importer is the one place I would keep Node, at least initially. Rat
 
 1. **Is `key` user-visible?** If yes it needs uniqueness feedback in the UI. If it is only a Mermaid artefact, hide it and generate from `label`.
 2. **Are portals user-creatable, or importer-only?** Users authoring their own subgraph inputs is more powerful but needs a palette entry and arity UI.
-3. **Does `detach` cascade to children?** Detaching an expanded Act — do its Scenes go with it, or must it collapse first? I would cascade and record it as one undo entry.
+3. **Does `detach` cascade to children?** Detaching an expanded Act — do its Scenes go with it, or must it collapse first? I would cascade, as a single atomic operation.
 4. **Is Scene order within an Act total or partial?** `rank` gives total order. If a Path-split means two Scenes are genuinely concurrent alternatives, order between them is meaningless and forcing a rank will mislead whoever reads the JSON later.
 5. **Can an Act contain an Act?** D4 permits it. If your domain forbids it, that is a registry rule (`allowedChildTypes`), not a core constraint.

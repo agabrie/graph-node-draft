@@ -13,7 +13,7 @@ const read = (f) => JSON.parse(readFileSync(new URL(f, import.meta.url), 'utf8')
 
 const schema = read('./graph-document.schema.json');
 const registry = read('./node-types.registry.json');
-const examples = read('./examples.json');
+const examples = { ...read('./examples.json'), ...read('./examples.catalogue.json') };
 
 /* ---------- registry helpers ---------- */
 
@@ -36,6 +36,41 @@ const portsOf = (node) => {
 };
 
 const rulesetFor = (kind) => registry.rulesets[kind] ?? registry.rulesets.generic;
+
+const extendsFrom = (type, ancestor) => {
+  let t = type;
+  while (t) {
+    if (t === ancestor) return true;
+    t = registry.nodeTypes[t]?.extends;
+  }
+  return false;
+};
+
+// Derived lint, never stored (D8). A branch node that no longer branches.
+// Mirrors design doc 8.1: only origin === "auto" collapses without asking.
+function degenerateBranches(doc) {
+  const { nodes, edges } = doc;
+  const out = [];
+  const active = Object.values(edges).filter((e) => e.state === 'active');
+  for (const n of Object.values(nodes)) {
+    if (n.state !== 'active' || !extendsFrom(n.type, 'core.branch')) continue;
+    const inDeg = active.filter((e) => e.to.node === n.id).length;
+    const outDeg = active.filter((e) => e.from.node === n.id).length;
+    if (inDeg > 1 || outDeg > 1) continue;
+    const hasChildren = Object.values(nodes).some((c) => c.parent === n.id)
+      || Object.values(edges).some((c) => c.parent === n.id);
+    if (hasChildren) continue;
+    const hasParked = Object.values(edges).some(
+      (e) => e.state !== 'active' && (e.from.node === n.id || e.to.node === n.id));
+    const authoredData = Boolean(n.data?.condition)
+      || (n.data?.mode != null && n.data.mode !== 'exclusive');
+    const extEmpty = Object.keys(n.ext ?? {}).length === 0;
+    const collapsible = n.data?.origin === 'auto' && !hasParked && !authoredData && extEmpty;
+    out.push({ key: n.key ?? n.id, inDeg, outDeg, collapsible,
+      reason: collapsible ? 'auto-collapse' : `retained (origin=${n.data?.origin ?? 'authored'})` });
+  }
+  return out;
+}
 
 /* ---------- invariant checks ---------- */
 
@@ -200,7 +235,14 @@ for (const [name, entry] of Object.entries(examples)) {
   console.log(`   invariants ${errs.length === 0 ? 'pass' : 'FAIL'}`);
   for (const e of errs) console.log(`     ${e}`);
   console.log(`   stats      ${stats.nodes} nodes, ${stats.edges} edges, `
-    + `${stats.detachedNodes} detached, ${stats.purgeable} purgeable\n`);
+    + `${stats.detachedNodes} detached, ${stats.purgeable} purgeable`);
+  const degen = degenerateBranches(entry.document);
+  if (degen.length) {
+    for (const d of degen) {
+      console.log(`   lint       ${d.key} branches ${d.inDeg} in / ${d.outDeg} out — ${d.reason}`);
+    }
+  }
+  console.log('');
 
   if (!ok || errs.length) failures++;
 }

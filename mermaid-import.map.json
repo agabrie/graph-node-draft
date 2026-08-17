@@ -1,0 +1,100 @@
+{
+  "mapVersion": "1.0.0",
+  "$comment": "Import-adapter data. Owned by the DiagramSourceParser adapter in the outer ring, NOT by the domain. Nothing here may be read by the domain model or domain services — the domain does not know that Mermaid exists. Split out of node-types.registry.json for exactly that reason.",
+  "$comment-usage": "Table-driven so the adapter contains no per-shape branching. Match arrays MUST be tried in order: two-character delimiters before one-character, or '[[' is misread as '[' and the label keeps a stray bracket.",
+
+  "flowchart": {
+    "dialect": "flowchart",
+    "aliases": ["graph"],
+    "directionTokens": ["TB", "TD", "BT", "LR", "RL"],
+    "shapeMatchOrder": [
+      { "open": "(((", "close": ")))", "type": "flow.terminal" },
+      { "open": "[[",  "close": "]]",  "type": "flow.subroutine" },
+      { "open": "[(",  "close": ")]",  "type": "flow.datastore" },
+      { "open": "([",  "close": "])",  "type": "flow.terminal" },
+      { "open": "[/",  "close": "/]",  "type": "flow.io" },
+      { "open": "[\\", "close": "\\]", "type": "flow.io" },
+      { "open": "[/",  "close": "\\]", "type": "flow.io" },
+      { "open": "{{",  "close": "}}",  "type": "flow.process" },
+      { "open": "((",  "close": "))",  "type": "flow.terminal" },
+      { "open": "{",   "close": "}",   "type": "flow.decision" },
+      { "open": "(",   "close": ")",   "type": "flow.rounded" },
+      { "open": ">",   "close": "]",   "type": "flow.process" },
+      { "open": "[",   "close": "]",   "type": "flow.process" }
+    ],
+    "edgeMatchOrder": [
+      { "token": "~~~",  "line": "invisible", "arrowEnd": "none" },
+      { "token": "<-->", "line": "solid",     "arrowEnd": "arrow", "arrowStart": "arrow" },
+      { "token": "-.->", "line": "dashed",    "arrowEnd": "arrow" },
+      { "token": "-.-",  "line": "dashed",    "arrowEnd": "none" },
+      { "token": "==>",  "line": "thick",     "arrowEnd": "arrow" },
+      { "token": "===",  "line": "thick",     "arrowEnd": "none" },
+      { "token": "-->",  "line": "solid",     "arrowEnd": "arrow" },
+      { "token": "--o",  "line": "solid",     "arrowEnd": "circle" },
+      { "token": "--x",  "line": "solid",     "arrowEnd": "cross" },
+      { "token": "---",  "line": "solid",     "arrowEnd": "none" }
+    ],
+    "constructs": {
+      "subgraph": "core.group"
+    },
+    "unmapped": {
+      "$comment": "Parked as inert payload under node.ext or document.ext so nothing is silently dropped. Report each in the import summary.",
+      "classDef": "ext:org.mermaid.style",
+      "class": "ext:org.mermaid.style",
+      "linkStyle": "ext:org.mermaid.style",
+      "click": "ext:org.mermaid.interaction",
+      "init": "ext:org.mermaid.config",
+      "comment": "ext:org.mermaid.comments"
+    }
+  },
+
+  "sequenceDiagram": {
+    "dialect": "sequenceDiagram",
+    "arrowMatchOrder": [
+      { "token": "-->>", "line": "dashed", "arrowEnd": "arrow" },
+      { "token": "->>",  "line": "solid",  "arrowEnd": "arrow" },
+      { "token": "--x",  "line": "dashed", "arrowEnd": "cross" },
+      { "token": "-x",   "line": "solid",  "arrowEnd": "cross" },
+      { "token": "--)",  "line": "dashed", "arrowEnd": "async" },
+      { "token": "-)",   "line": "solid",  "arrowEnd": "async" },
+      { "token": "-->",  "line": "dashed", "arrowEnd": "none" },
+      { "token": "->",   "line": "solid",  "arrowEnd": "none" }
+    ],
+    "constructs": {
+      "participant": "seq.participant",
+      "actor": "seq.actor",
+      "note": "seq.note",
+      "message": "seq.message"
+    },
+    "blockKeywords": ["alt", "else", "opt", "loop", "par", "and", "critical", "option", "break", "rect"],
+    "blockType": "seq.block",
+    "activationTokens": { "+": "activate", "-": "deactivate" },
+    "unmapped": {
+      "autonumber": "meta:sequence.autonumber",
+      "box": "ext:org.mermaid.box",
+      "link": "ext:org.mermaid.interaction"
+    }
+  },
+
+  "erDiagram": {
+    "dialect": "erDiagram",
+    "constructs": {
+      "entity": "er.entity",
+      "relationship": "er.relationship"
+    },
+    "cardinalityLeft": {
+      "||": "one",
+      "|o": "zeroOrOne",
+      "}o": "zeroOrMany",
+      "}|": "oneOrMany"
+    },
+    "cardinalityRight": {
+      "||": "one",
+      "o|": "zeroOrOne",
+      "o{": "zeroOrMany",
+      "|{": "oneOrMany"
+    },
+    "identifying": { "--": true, "..": false },
+    "keyTokens": ["PK", "FK", "UK"]
+  }
+}
