@@ -1,0 +1,11 @@
+sequenceDiagram
+  autonumber
+  actor Reader as Reader
+  participant API as Order API
+  participant PSP as Stripe
+  Reader->>API: POST /checkout
+  API->>PSP: create charge
+  alt approved
+    PSP-->>API: succeeded
+    API-->>Reader: 201 Created
+  end
