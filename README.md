@@ -1,11 +1,15 @@
 # Graph node editor — data model, spec and runnable example
 
-Start with **`example/example.html`**. Open it in a browser — no server, no build step,
-no dependencies. Everything else in here explains or specifies what that page does.
+Start with the demo: `npm start`, then open **http://localhost:8080**. No build
+step, no runtime dependencies — the app is plain ES modules served by a tiny
+static server (`server.mjs`, needed because modules do not load over `file://`).
+Everything else in here explains or specifies what that page does.
 
 ## Layout
 
 ```
+server.mjs        no-dependency static server for the demo:  npm start
+
 example/          runnable demo, and the only working code
   example.html      the page
   example.js        demo app: presets, palette, inspector, buttons
@@ -18,8 +22,8 @@ example/          runnable demo, and the only working code
                       topology, mutation, validation, ops)
     graph.js          the Graph aggregate facade
   samples/*.mmd     one Mermaid sample per dialect
-  tests/selftest.mjs  92 checks, no dependencies:  node tests/selftest.mjs
-  tests/domtest.mjs   70 checks driving the real page:  npm i jsdom && node tests/domtest.mjs
+  tests/selftest.mjs  92 headless checks:  npm run test:self
+  tests/domtest.mjs   70 checks driving the real page:  npm run test:dom
   README.md         what to click, and what to watch
 
 docs/
@@ -56,12 +60,17 @@ runs; you just have no types to place.
 ## Verify it
 
 ```bash
-cd example
-node selftest.mjs                  # 92 checks, no install
-npm i jsdom && node domtest.mjs    # 70 checks, boots the page and clicks everything
+npm install
+npm test        # spec validation, then 92 headless checks, then 70 DOM checks
+```
 
-cd ../spec
-npm i ajv ajv-formats && node validate.mjs
+Or piece by piece: `npm run test:spec`, `npm run test:self`, `npm run test:dom`,
+and `npm run typecheck` for the TypeScript reference file.
+
+The core library is also importable as a module:
+
+```js
+import GraphCore, { Graph, TypeRegistry, ops } from 'graph-node-draft';
 ```
 
 ## Known gaps

@@ -1,21 +1,22 @@
 # Example — runnable graph node editor
 
-Open **`example.html`** directly in a browser. No server, no build step, no dependencies.
-Everything is classic `<script>` tags so `file://` works.
+Run `npm start` from the repo root, then open **http://localhost:8080**. No build
+step, no runtime dependencies — everything is plain ES modules, served over HTTP
+because browsers do not load modules from `file://`.
 
 ## The files
 
 | File | Layer | What it is |
 |---|---|---|
-| `example.html` | app | Page and styles. Loads the core scripts below, then `example.js`. |
+| `example.html` | app | Page and styles. Loads `example.js` as an ES module; the rest of the app follows through imports. |
 | `example.js` | app | Wires it together: presets, palette, inspector, Mermaid buttons. |
 | `renderer.js` | app | One possible renderer. Reads only type, label, ports, `view` and containment — never `node.data`. |
 | `node-types.js` | **project** | All node types, each a subclass of `GraphCore.BaseNodeType`. Includes the branch split. |
 | `mermaid-io.js` | adapter | The only file that knows Mermaid exists. |
 | `core/` | **library** | Document, mutations, ports, hooks, validation. Knows nothing about rendering, layout, Mermaid, or any domain type. One file per entity in `core/model/` (each with its factory), one file per service in `core/services/`, and the `Graph` aggregate facade in `core/graph.js`. |
 | `samples/*.mmd` | fixtures | One sample per dialect. |
-| `tests/selftest.mjs` | test | 92 headless checks. `node tests/selftest.mjs` — no dependencies. |
-| `tests/domtest.mjs` | test | 70 checks that drive the actual page. `npm i jsdom && node tests/domtest.mjs`. |
+| `tests/selftest.mjs` | test | 92 headless checks. `npm run test:self` — no dependencies. |
+| `tests/domtest.mjs` | test | 70 checks that drive the actual page. `npm run test:dom`. |
 
 Delete `node-types.js` and the library still runs — you just have no types to place.
 That is the boundary the whole design is built around.

@@ -3,26 +3,9 @@
  * No dependencies. Exercises the same code paths the buttons in example.html use.
  */
 import { readFileSync } from 'node:fs';
-
-const load = (f) => (0, eval)(readFileSync(new URL(f, import.meta.url), 'utf8'));
-load('../core/util.js');
-load('../core/model/ids.js');
-load('../core/model/port.js');
-load('../core/model/node.js');
-load('../core/model/edge.js');
-load('../core/model/document.js');
-load('../core/model/base-node-type.js');
-load('../core/services/ranking.js');
-load('../core/services/registry.js');
-load('../core/services/topology.js');
-load('../core/graph.js');
-load('../core/services/mutation.js');
-load('../core/services/validation.js');
-load('../core/services/ops.js');
-load('../node-types.js');
-load('../mermaid-io.js');
-
-const { GraphCore, DemoTypes, MermaidIO } = globalThis;
+import GraphCore from '../core/index.js';
+import { DemoTypes } from '../node-types.js';
+import { MermaidIO } from '../mermaid-io.js';
 
 let pass = 0, fail = 0;
 function check(name, cond, extra) {

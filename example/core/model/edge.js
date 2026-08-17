@@ -4,28 +4,24 @@
  * lifecycle fields: containment (parent), sibling order (rank), state.
  * Endpoints reference node ids, never keys.
  */
-(function (root) {
-  'use strict';
-  var GC = root.GraphCore = root.GraphCore || {};
 
-  GC.EdgeFactory = {
-    /**
-     * Build an edge record. `deps` carries the values the caller resolves
-     * against the document (fresh id, containing parent, sibling rank).
-     */
-    create: function (spec, deps) {
-      return {
-        id: deps.id,
-        type: spec.type || 'core.link',
-        from: { node: spec.from.node, port: spec.from.port },
-        to: { node: spec.to.node, port: spec.to.port },
-        parent: deps.parent || null,
-        rank: spec.rank || deps.rank,
-        label: spec.label || '',
-        state: 'active',
-        style: spec.style || { line: 'solid', arrowEnd: 'arrow' },
-        data: spec.data || {}
-      };
-    }
-  };
-})(typeof window !== 'undefined' ? window : globalThis);
+export const EdgeFactory = {
+  /**
+   * Build an edge record. `deps` carries the values the caller resolves
+   * against the document (fresh id, containing parent, sibling rank).
+   */
+  create(spec, deps) {
+    return {
+      id: deps.id,
+      type: spec.type || 'core.link',
+      from: { node: spec.from.node, port: spec.from.port },
+      to: { node: spec.to.node, port: spec.to.port },
+      parent: deps.parent || null,
+      rank: spec.rank || deps.rank,
+      label: spec.label || '',
+      state: 'active',
+      style: spec.style || { line: 'solid', arrowEnd: 'arrow' },
+      data: spec.data || {}
+    };
+  }
+};

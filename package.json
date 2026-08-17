@@ -1,19 +1,38 @@
 {
-  "name": "outputs",
+  "name": "graph-node-draft",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "description": "Kind-agnostic graph document model for a node editor: spec, reference validator, and a runnable no-build demo library.",
+  "type": "module",
+  "main": "example/core/index.js",
+  "exports": {
+    ".": "./example/core/index.js"
   },
-  "keywords": [],
-  "author": "",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "npm run test:spec && npm run test:self && npm run test:dom",
+    "test:spec": "node spec/validate.mjs",
+    "test:self": "node example/tests/selftest.mjs",
+    "test:dom": "node example/tests/domtest.mjs",
+    "typecheck": "tsc --noEmit --strict --target es2022 reference/custom-node-branch-split.ts"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "graph",
+    "node-editor",
+    "diagram",
+    "mermaid",
+    "json-schema"
+  ],
+  "author": "Abduraghmaan Gabriels",
   "license": "ISC",
   "dependencies": {
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1"
   },
   "devDependencies": {
+    "jsdom": "^30.0.1",
     "typescript": "^7.0.2"
   }
 }

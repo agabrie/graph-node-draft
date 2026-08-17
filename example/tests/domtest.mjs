@@ -1,14 +1,17 @@
 /* domtest.mjs — boots example.html in jsdom and drives the buttons.
  * Optional check that the page wires up and the interactions do not throw.
- *   npm i jsdom && node domtest.mjs
+ *   npm run test:dom   (needs the jsdom devDependency)
+ *
+ * jsdom does not execute <script type="module">, so this test recreates what
+ * the browser would do: build the DOM from the page markup, expose it as
+ * globals, then import example.js — whose module graph pulls in the whole
+ * library — and let its boot() wire the page exactly as in a browser.
  */
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 
 const html = readFileSync(new URL('../example.html', import.meta.url), 'utf8');
 const dom = new JSDOM(html, {
-  runScripts: 'dangerously',
-  resources: 'usable',
   url: new URL('../example.html', import.meta.url).href,
   pretendToBeVisual: true
 });
@@ -17,7 +20,20 @@ const errors = [];
 dom.window.addEventListener('error', (e) => errors.push(e.message || String(e.error)));
 dom.virtualConsole.on('jsdomError', (e) => errors.push(e.message));
 
-await new Promise((r) => setTimeout(r, 400));
+// What a browser gives a module script, example.js and renderer.js reach via
+// globals: document, window, and the constructors used by the download helper.
+globalThis.window = dom.window;
+globalThis.document = dom.window.document;
+globalThis.Blob = dom.window.Blob;
+globalThis.FileReader = dom.window.FileReader;
+
+try {
+  await import('../example.js');
+} catch (err) {
+  errors.push('module import failed: ' + err.message);
+}
+
+await new Promise((r) => setTimeout(r, 50));
 
 const doc = dom.window.document;
 let pass = 0, fail = 0;
