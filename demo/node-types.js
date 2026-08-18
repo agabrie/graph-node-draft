@@ -71,7 +71,7 @@ function StepNode() {}
 extend(StepNode, BaseNodeType);
 StepNode.type = 'demo.step';
 StepNode.label = 'Step (auto-splits)';
-StepNode.describe = () => ({ allowsChildren: false });
+StepNode.describe = () => ({ allowsChildren: true });
 /** The moment this step gets a second outgoing edge, move both onto a
  *  fresh split node. Consumer policy — the library never counts edges. */
 StepNode.prototype.onEdgeAdded = function (ctx, edge) {

@@ -117,7 +117,7 @@ Consumers extend a base type class and register it under a name. A node's
 
 A registered type may provide:
 
-- **Hooks** — called during editing, inside the same atomic change:
+- **Hooks** — called during editing, inside the same mutate() batch (§5):
   - `onCreate` — e.g. a scene auto-attaches its label-block child here
   - `onEdgeAdded` / `onEdgeRemoved` — e.g. a branch-split notices it gained
     or lost a branch and restructures or removes itself
@@ -144,9 +144,15 @@ validity (§7) depends only on structure.
 
 ## 5. Editing behavior
 
-- **Atomic changes.** Every edit either fully applies — hooks run, rules
-  checked — or the document is untouched. A hook that throws cannot leave a
-  half-modified graph.
+- **Not atomic — writes are live.** `mutate()` runs a change directly against
+  the document: no staged copy, no rollback. Hooks and validation run after
+  the caller's own writes; a throw at any point (from the caller, a hook, or
+  a validation error) stops the batch but does not undo what already ran.
+  Recovering from a partially-applied edit (e.g. reloading a last-known-good
+  snapshot) is a consumer concern — this was previously a library-level
+  atomicity guarantee via copy-and-swap, dropped because the cost of cloning
+  the whole document on every write wasn't worth it for consumers who already
+  have their own persistence/undo layer (e.g. snapshotting to IndexedDB).
 - **Three levels of removal:**
   1. **detach** — parked, wiring preserved, children go with it; reattachable
   2. **disconnect** — its edges are removed

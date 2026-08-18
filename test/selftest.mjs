@@ -126,8 +126,12 @@ section('edit, detach, disconnect, purge');
   check('purge succeeded once isolated', !g.node(b));
 }
 
-/* ------------------------------------------------------------------ */
-section('atomicity: a throwing hook leaves the document untouched');
+/* ------------------------------------------------------------------ *
+ * mutate() writes straight to the live document (no staged copy, no
+ * rollback — see Graph.js's mutate() docstring). A throwing hook stops the
+ * batch but does not undo what already ran before the throw.
+ * ------------------------------------------------------------------ */
+section('a throwing hook stops the batch but does not roll back prior writes');
 {
   function BoomType() {}
   BoomType.prototype = Object.create(BaseNodeType.prototype);
@@ -142,7 +146,7 @@ section('atomicity: a throwing hook leaves the document untouched');
   let threw = false;
   try { GraphKit.ops.addNode(g, { meta: { type: 'demo.boom' } }); } catch (e) { threw = true; }
   check('the throw propagated', threw);
-  check('nothing was written', g.allNodes().length === before);
+  check('the node the hook was attached to was still written', g.allNodes().length === before + 1);
 }
 
 /* ------------------------------------------------------------------ */
@@ -296,6 +300,59 @@ section('linkLockedCompanions: transitive, direction-aware, ancestor-excluded');
   const companionsOfOutside = g.linkLockedCompanions(outside);
   check('a node nested in a non-locked container is excluded from companions',
     !companionsOfOutside.includes(autoChild));
+
+  // A downstream node's own containment ancestor is excluded too, not just
+  // the dragged node's — the chain can reach a second node's parent even
+  // when that parent has nothing to do with the node the drag started from.
+  const container2 = GraphKit.ops.addNode(g, {});
+  const inside2 = GraphKit.ops.addNode(g, { parent: container2 });
+  const start = GraphKit.ops.addNode(g, {});
+  GraphKit.ops.connect(g, start, inside2);
+  GraphKit.ops.connect(g, inside2, container2); // inside2 links back to its own parent
+  const companionsOfStart = g.linkLockedCompanions(start);
+  check('inside2 (directly downstream) is included', companionsOfStart.includes(inside2));
+  check('inside2\'s own containment parent is excluded even though it is not start\'s ancestor',
+    !companionsOfStart.includes(container2));
+
+  // A downstream node with an "external input" — an upstream neighbour that
+  // is neither id nor part of id's own downstream set — is excluded, even
+  // though it's otherwise reachable via a legitimate forward chain. It's fed
+  // by something outside the drag, so it isn't purely id's to carry.
+  // Start -> a1 -> branch -> pathA -> a2 -> a1 (a2 loops back to a1):
+  // dragging branch reaches a1 via branch->pathA->a2->a1, but a1 is also
+  // fed directly by Start, which branch's downstream set never reaches.
+  const extStart = GraphKit.ops.addNode(g, {});
+  const a1 = GraphKit.ops.addNode(g, {});
+  const branch = GraphKit.ops.addNode(g, {});
+  const pathA = GraphKit.ops.addNode(g, {});
+  const a2 = GraphKit.ops.addNode(g, {});
+  const pathB = GraphKit.ops.addNode(g, {});
+  GraphKit.ops.connect(g, extStart, a1);
+  GraphKit.ops.connect(g, a1, branch);
+  GraphKit.ops.connect(g, branch, pathA);
+  GraphKit.ops.connect(g, pathA, a2);
+  GraphKit.ops.connect(g, branch, pathB);
+  GraphKit.ops.connect(g, a2, a1);
+  const branchCompanions = g.linkLockedCompanions(branch);
+  check('pathA, pathB, a2 are companions of branch', ['pathA', 'pathB', 'a2'].every((_, i) =>
+    branchCompanions.includes([pathA, pathB, a2][i])));
+  check('a1 is excluded — Start feeds it from outside branch\'s downstream set',
+    !branchCompanions.includes(a1));
+
+  // Contrast: a cycle that closes back through id's own downstream chain,
+  // without any external feed, is NOT excluded — n4's only upstream
+  // neighbour (n3) is itself downstream of n2, so n4 has no external input.
+  const n1 = GraphKit.ops.addNode(g, {});
+  const n2 = GraphKit.ops.addNode(g, {});
+  const n3 = GraphKit.ops.addNode(g, {});
+  const n4 = GraphKit.ops.addNode(g, {});
+  GraphKit.ops.connect(g, n1, n2);
+  GraphKit.ops.connect(g, n2, n3);
+  GraphKit.ops.connect(g, n3, n4);
+  GraphKit.ops.connect(g, n4, n2); // closes back on n2 itself, no outside feed
+  const companionsOfN2 = g.linkLockedCompanions(n2);
+  check('n4 stays in — its cycle closes back on n2 itself, no external input',
+    companionsOfN2.includes(n4));
 }
 
 /* ------------------------------------------------------------------ */

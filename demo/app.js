@@ -10,6 +10,11 @@ let graph = new GraphKit.Graph(GraphKit.createDocument({ meta: { title: 'Scratch
 let view; // Renderer
 const $ = (id) => document.getElementById(id);
 
+// Dev convenience: poke the live graph from the devtools console, e.g.
+// graph.ancestorsOf(nodeId), graph.node(id). Re-pointed in reset() too,
+// since graph itself gets reassigned there.
+window.graph = graph;
+
 /* ---------------- logging ---------------- */
 
 function log(msg, cls) {
@@ -212,6 +217,7 @@ function btnRow(pairs) {
 
 function reset(title) {
   graph = new GraphKit.Graph(GraphKit.createDocument({ meta: { title: title || 'Scratch map' } }), registry);
+  window.graph = graph;
   view.graph = graph;
   view.selection = null;
   view.linkFrom = null;

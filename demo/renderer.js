@@ -131,7 +131,7 @@ Renderer.prototype._svgPoint = function (ev) {
 
 /** graph.linkLockedCompanions(id) already resolves the full set of ids a
  *  lockLinked drag should carry (transitive, direction-aware, ancestor- and
- *  auto-layout-excluded — see lib/services/topology.js). This layer adds
+ *  auto-layout-excluded — see lib/services/TopologyService.js). This layer adds
  *  only what the library cannot know: whether each one is currently on
  *  screen, and where — pixel state that lives in this.boxes. */
 Renderer.prototype._companionsOf = function (id) {
