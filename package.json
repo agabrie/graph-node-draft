@@ -1,7 +1,7 @@
 {
   "name": "graph-node-draft",
   "version": "1.0.0",
-  "description": "Data-agnostic node-graph library: entities, a type-extension system and an atomic editing gate, with no rendering and no assumptions about domain vocabulary. example/ is a demo frontend, not the library.",
+  "description": "Data-agnostic node-graph library: entities, a type-extension system and an atomic editing gate, with no rendering and no assumptions about domain vocabulary. demo/ is a reference frontend, not the library.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -9,12 +9,8 @@
   },
   "scripts": {
     "start": "node server.mjs",
-    "test": "npm run test:lib && npm run test:spec && npm run test:example-self && npm run test:example-dom",
-    "test:lib": "node test/selftest.mjs",
-    "test:spec": "node spec/validate.mjs",
-    "test:example-self": "node example/tests/selftest.mjs",
-    "test:example-dom": "node example/tests/domtest.mjs",
-    "typecheck": "tsc --noEmit --strict --target es2022 reference/custom-node-branch-split.ts"
+    "test": "npm run test:lib",
+    "test:lib": "node test/selftest.mjs"
   },
   "engines": {
     "node": ">=18"
@@ -22,18 +18,8 @@
   "keywords": [
     "graph",
     "node-editor",
-    "diagram",
-    "mermaid",
-    "json-schema"
+    "diagram"
   ],
   "author": "Abduraghmaan Gabriels",
-  "license": "ISC",
-  "dependencies": {
-    "ajv": "^8.20.0",
-    "ajv-formats": "^3.0.1"
-  },
-  "devDependencies": {
-    "jsdom": "^30.0.1",
-    "typescript": "^7.0.2"
-  }
+  "license": "ISC"
 }

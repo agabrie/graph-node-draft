@@ -1,86 +1,106 @@
-# Graph node editor — data model, spec and runnable example
+# graph-node-draft — a data-agnostic node-graph library
 
-Start with the demo: `npm start`, then open **http://localhost:8080**. No build
-step, no runtime dependencies — the app is plain ES modules served by a tiny
-static server (`server.mjs`, needed because modules do not load over `file://`).
-Everything else in here explains or specifies what that page does.
+A library for entities, edges, and a type-extension system for building node
+graphs — branching stories, flowcharts, whatever a consumer needs — without
+the library knowing any of that domain vocabulary itself. No rendering, no
+built-in node types. `demo/` is one example consumer, not part of the library.
 
-## Layout
+The full shape — what a node and edge actually are, what's structural versus
+metadata, why there are no ports, how the type-hook extension system works —
+is written up in **[`docs/domain-shape.md`](docs/domain-shape.md)**. Start
+there for the *why*; this file is the *where*.
 
-```
-server.mjs        no-dependency static server for the demo:  npm start
+## Try it
 
-example/          runnable demo, and the only working code
-  example.html      the page
-  example.js        demo app: presets, palette, inspector, buttons
-  renderer.js       one possible renderer (SVG). Replaceable.
-  node-types.js     PROJECT code — all node types, including the branch split
-  mermaid-io.js     the only file that knows Mermaid exists
-  core/             LIBRARY — document, ports, mutations, hooks, validation
-    model/            one file per entity, each with its factory
-    services/         one file per domain service (ranking, registry,
-                      topology, mutation, validation, ops)
-    graph.js          the Graph aggregate facade
-  samples/*.mmd     one Mermaid sample per dialect
-  tests/selftest.mjs  92 headless checks:  npm run test:self
-  tests/domtest.mjs   70 checks driving the real page:  npm run test:dom
-  README.md         what to click, and what to watch
-
-docs/
-  graph-model-design.md    the spec: data shape, decisions, lifecycle, invariants
-  architecture-onion.md    layering, ports and adapters, dependency enforcement
-
-spec/
-  graph-document.schema.json   JSON Schema 2020-12 for a document
-  node-types.registry.json     type descriptors as plain data
-  mermaid-import.map.json      import-adapter lookup tables
-  examples.json                four worked documents
-  examples.catalogue.json      a simple map, plus one node of every type
-  validate.mjs                 schema + invariant checker (needs ajv)
-
-reference/
-  custom-node-branch-split.ts  the split as typed reference code
+```bash
+npm start
 ```
 
-## The one idea
-
-The library knows only this: nodes and edges live in id-keyed maps, any node may
-contain children, edges connect ports, ports declare a capacity, and something
-gets asked when a capacity is exceeded.
-
-It does not know what a scene is, what branching means, how to draw a box, or
-that Mermaid exists. Grep `example/core/` for `split`, `branch`, `render` or
-`mermaid` — every hit is a comment saying it does not do that.
-
-The branch split is the proof. It inserts itself when a port overflows, grows its
-own outputs, and removes itself when it stops branching — entirely from
-`node-types.js`, which is project code. Delete that file and the library still
-runs; you just have no types to place.
+Opens **http://localhost:8080**. No build step, no dependencies — the whole
+thing is plain ES modules, served over HTTP only because browsers don't load
+modules from `file://` (`server.mjs`, ~40 lines, no npm packages).
 
 ## Verify it
 
 ```bash
-npm install
-npm test        # spec validation, then 92 headless checks, then 70 DOM checks
+npm test
 ```
 
-Or piece by piece: `npm run test:spec`, `npm run test:self`, `npm run test:dom`,
-and `npm run typecheck` for the TypeScript reference file.
+Runs [`test/selftest.mjs`](test/selftest.mjs) — headless checks of `lib/`
+against the shape doc: factories rejecting malformed input, atomic commits,
+metadata sharing, containment vs. links, and the consumer-owned branch-split
+example (proving the library needs no concept of branching to support one).
 
-The core library is also importable as a module:
+## Layout
 
-```js
-import GraphCore, { Graph, TypeRegistry, ops } from 'graph-node-draft';
 ```
+lib/                     the library — the only thing that matters if
+                         you're consuming this, not the demo
+  model/                 one file per entity, each with its own factory
+    node.js  edge.js  metadata.js  document.js  ids.js  base-node-type.js
+  services/               one file per domain service
+    topology.js            every read/query — lookups, containment,
+                           metadata resolution, visibility
+    mutation.js             the staged MutationContext: hook dispatch,
+                           deferred splice/remove, all writes
+    validation.js           the handful of structural invariants
+                           (docs/domain-shape.md §7)
+    ops.js                  the public editing verbs: addNode, connect,
+                           reparent, detach/attach/disconnect/purge, ...
+    ranking.js              fractional sibling order
+    registry.js             TypeRegistry — resolves a type name to its
+                           registered class and descriptor
+  graph.js                the Graph aggregate: a thin facade over the
+                         services above, plus the atomic mutate()/apply()
+                         commit gate
+  index.js                the public entry point
+
+demo/                     a reference consumer, not the library
+  index.html                the page
+  app.js                    presets, palette, inspector, wiring
+  node-types.js             project code — the registered node types,
+                           including the branch-split and scene-with-
+                           auto-attached-label-block examples
+  renderer.js               one possible renderer (SVG). Pixel layout,
+                           drag math, and "what's currently on screen"
+                           all live here; anything that's just a graph or
+                           metadata fact (containment, lock states, which
+                           ancestor is visible) is a library call instead
+
+test/
+  selftest.mjs              headless checks of lib/, no dependencies
+
+docs/
+  domain-shape.md           the current spec — entities, metadata, the
+                           type-hook system, invariants, settled decisions
+
+server.mjs                 no-dependency static server for the demo
+```
+
+## The core idea
+
+The library knows: nodes and edges live in id-keyed maps, any node may
+contain children, edges connect node to node directly (no ports), and a
+node's metadata (type, label, position, lock flags) lives in its own
+referenced record rather than on the node itself.
+
+It does not know what a "scene" or a "branch" is, how to draw anything, or
+that Mermaid or any other format exists. All of that is `demo/node-types.js`
+— project code, deletable without breaking the library. The branch-split
+example is the proof: it inserts itself when a node gets a second outgoing
+edge and removes itself when it stops branching, entirely from its own
+`onEdgeAdded`/`onEdgeRemoved` hooks. The library has no concept of capacity,
+ports, or a branching trigger anywhere in it — grep `lib/` for `split` or
+`branch` and get nothing.
 
 ## Known gaps
 
-- `docs/` and `spec/` still call port capacity **`arity`**, and still describe the
-  branch split as a built-in type. The example uses the newer naming and the
-  correct boundary. The example is right; the docs lag by one revision.
-- No undo, redo or change attribution anywhere, by design. `Detach` is the
-  reversible removal; `Purge` is gated behind having no edges and no children.
-- Mermaid export is deliberately lossy — ports beyond in/out, `data` payloads and
-  coordinates have no Mermaid syntax. The JSON is the source of truth.
-- The Mermaid parser is line-based, not a real grammar. It covers the samples and
-  logs a note for anything it skips.
+- No Mermaid (or any other) import/export adapter yet — deliberately
+  deferred, though the shape was designed with one in mind (see
+  `docs/domain-shape.md` §8: an adapter must be buildable from the same
+  public `ops` any consumer uses, no back doors).
+- No undo, redo, or change attribution, by design. `detach` is the
+  reversible removal; `purge` is gated behind having no edges and no
+  children.
+- No persistence layer (`DocumentRepository`-style) — a consumer loads and
+  saves the plain JSON document itself.

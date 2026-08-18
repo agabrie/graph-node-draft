@@ -1,9 +1,7 @@
-/* server.mjs — tiny static dev server for the repo.
+/* server.mjs — tiny static dev server for the demo.
  *
- * ES modules do not load over file://, so both the new demo (demo/) and the
- * old example spike (example/) need an HTTP origin. No dependencies:
- *   npm start  →  http://localhost:8080/        (demo/, against lib/)
- *                 http://localhost:8080/example/example.html  (old spike)
+ * ES modules do not load over file://, so demo/ needs an HTTP origin.
+ * No dependencies:  npm start  →  http://localhost:8080/
  */
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -45,5 +43,4 @@ createServer(async (req, res) => {
   }
 }).listen(PORT, () => {
   console.log('demo running at http://localhost:' + PORT + '/');
-  console.log('old example spike at http://localhost:' + PORT + '/example/example.html');
 });
