@@ -1,19 +1,25 @@
 {
-  "name": "outputs",
+  "name": "graph-node-draft",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Data-agnostic node-graph library: entities, a type-extension system and an atomic editing gate, with no rendering and no assumptions about domain vocabulary. demo/ is a reference frontend, not the library.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.mjs",
+    "test": "npm run test:lib",
+    "test:lib": "node test/selftest.mjs"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "ajv": "^8.20.0",
-    "ajv-formats": "^3.0.1"
+  "engines": {
+    "node": ">=18"
   },
-  "devDependencies": {
-    "typescript": "^7.0.2"
-  }
+  "keywords": [
+    "graph",
+    "node-editor",
+    "diagram"
+  ],
+  "author": "Abduraghmaan Gabriels",
+  "license": "ISC"
 }
