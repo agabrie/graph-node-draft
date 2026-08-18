@@ -1,0 +1,228 @@
+/* test/selftest.mjs — headless check of lib/, against docs/domain-shape.md.
+ * Run with:  node test/selftest.mjs   (also npm run test:lib)
+ * No dependencies.
+ */
+import GraphKit, { BaseNodeType } from '../lib/index.js';
+
+let pass = 0, fail = 0;
+function check(name, cond, extra) {
+  if (cond) { pass++; console.log('  ok   ' + name); }
+  else { fail++; console.log('  FAIL ' + name + (extra ? '  → ' + extra : '')); }
+}
+function section(t) { console.log('\n' + t); }
+
+function newGraph(registry) {
+  return new GraphKit.Graph(GraphKit.createDocument({}), registry || new GraphKit.TypeRegistry());
+}
+
+/* ------------------------------------------------------------------ */
+section('factories refuse malformed input');
+{
+  let threw = false;
+  try { GraphKit.NodeFactory.create({}, {}); } catch (e) { threw = true; }
+  check('NodeFactory requires an id', threw);
+
+  threw = false;
+  try { GraphKit.EdgeFactory.create({ from: 'a' }, { id: 'x' }); } catch (e) { threw = true; }
+  check('EdgeFactory requires "to"', threw);
+
+  threw = false;
+  try { GraphKit.EdgeFactory.create({ to: 'b' }, { id: 'x' }); } catch (e) { threw = true; }
+  check('EdgeFactory requires "from"', threw);
+
+  threw = false;
+  try { GraphKit.MetadataFactory.create('not an object', { id: 'x' }); } catch (e) { threw = true; }
+  check('MetadataFactory refuses non-object fields', threw);
+}
+
+/* ------------------------------------------------------------------ */
+section('nodes are untyped by default, and that is legal');
+{
+  const g = newGraph();
+  const a = GraphKit.ops.addNode(g, {});
+  check('node created with no meta', g.node(a).meta === null);
+  check('typeOf is null, not an error', g.typeOf(a) === null);
+  check('valid with no type at all', g.validate().filter((i) => i.level === 'error').length === 0);
+}
+
+/* ------------------------------------------------------------------ */
+section('metadata: create, patch, and share');
+{
+  const g = newGraph();
+  const a = GraphKit.ops.addNode(g, { meta: { type: 'demo.thing', label: 'A', x: 10, y: 20 } });
+  check('inline meta created a record', !!g.node(a).meta);
+  check('metaOf resolves it', g.metaOf('node', a).label === 'A');
+  check('typeOf reads through meta', g.typeOf(a) === 'demo.thing');
+
+  GraphKit.ops.setNodeMeta(g, a, { label: 'Renamed' });
+  check('setNodeMeta merges, does not replace', g.metaOf('node', a).label === 'Renamed' && g.metaOf('node', a).type === 'demo.thing');
+
+  const b = GraphKit.ops.addNode(g, {});
+  GraphKit.ops.linkMeta(g, 'node', b, g.node(a).meta);
+  check('linkMeta shares the record', g.node(b).meta === g.node(a).meta);
+  check('shared record means shared type', g.typeOf(b) === 'demo.thing');
+
+  GraphKit.ops.setNodeMeta(g, b, { label: 'B only' });
+  check('editing through one owner is visible to the other (same record)', g.metaOf('node', a).label === 'B only');
+
+  let threw = false;
+  try { GraphKit.ops.linkMeta(g, 'node', a, 'nonexistent'); } catch (e) { threw = true; }
+  check('linkMeta refuses an unknown record', threw);
+}
+
+/* ------------------------------------------------------------------ */
+section('edges: node-to-node, no ports, free to cross containment');
+{
+  const g = newGraph();
+  const group = GraphKit.ops.addNode(g, { meta: { label: 'Group' } });
+  const inside = GraphKit.ops.addNode(g, { parent: group, meta: { label: 'Inside' } });
+  const outside = GraphKit.ops.addNode(g, { meta: { label: 'Outside' } });
+
+  const e = GraphKit.ops.connect(g, outside, inside, { meta: { label: 'crosses in' } });
+  check('edge created straight across the boundary', g.edge(e).from === outside && g.edge(e).to === inside);
+  check('edge metadata resolves', g.metaOf('edge', e).label === 'crosses in');
+  check('no error — crossing edges are legal', g.validate().filter((i) => i.level === 'error').length === 0);
+
+  let threw = false;
+  try { GraphKit.ops.reparent(g, group, inside); } catch (err) { threw = true; }
+  check('reparent still refuses a containment cycle', threw);
+
+  GraphKit.ops.reparent(g, inside, null);
+  check('reparent moved the node out', g.node(inside).parent === null);
+  check('the crossing edge survives reparenting (old portal rule is gone)', g.allEdges().length === 1);
+
+  threw = false;
+  try { GraphKit.ops.connect(g, outside, 'no-such-node'); } catch (err) { threw = true; }
+  check('connect refuses a missing endpoint', threw);
+}
+
+/* ------------------------------------------------------------------ */
+section('edit, detach, disconnect, purge');
+{
+  const g = newGraph();
+  const a = GraphKit.ops.addNode(g, { meta: { label: 'A' } });
+  const b = GraphKit.ops.addNode(g, { meta: { label: 'B' } });
+  const e = GraphKit.ops.connect(g, a, b, { meta: { label: 'goes to' } });
+
+  GraphKit.ops.setNodeData(g, a, { note: 'hello' });
+  check('data patched', g.node(a).data.note === 'hello');
+  check('data edit touched no edges', g.allEdges().length === 1);
+
+  GraphKit.ops.setEdgeData(g, e, { weight: 3 });
+  check('edge data stored', g.edge(e).data.weight === 3);
+
+  GraphKit.ops.detach(g, b);
+  check('node detached', g.node(b).state === 'detached');
+  check('its edge is parked, not deleted', g.edge(e).state === 'detached');
+  GraphKit.ops.attach(g, b);
+  check('reattach restored the wiring', g.edge(e).state === 'active');
+
+  let threw = false;
+  try { GraphKit.ops.purge(g, b); } catch (err) { threw = true; }
+  check('purge refused while connected', threw);
+  GraphKit.ops.disconnect(g, b);
+  check('disconnect removed edges', g.allEdges().length === 0);
+  GraphKit.ops.purge(g, b);
+  check('purge succeeded once isolated', !g.node(b));
+}
+
+/* ------------------------------------------------------------------ */
+section('atomicity: a throwing hook leaves the document untouched');
+{
+  function BoomType() {}
+  BoomType.prototype = Object.create(BaseNodeType.prototype);
+  BoomType.type = 'demo.boom';
+  BoomType.label = 'Boom';
+  BoomType.describe = () => ({ allowsChildren: true });
+  BoomType.prototype.onCreate = function () { throw new Error('nope'); };
+
+  const registry = new GraphKit.TypeRegistry().register(BoomType);
+  const g = newGraph(registry);
+  const before = g.allNodes().length;
+  let threw = false;
+  try { GraphKit.ops.addNode(g, { meta: { type: 'demo.boom' } }); } catch (e) { threw = true; }
+  check('the throw propagated', threw);
+  check('nothing was written', g.allNodes().length === before);
+}
+
+/* ------------------------------------------------------------------ */
+section('unregistered types are tolerated, not fatal (portability)');
+{
+  const g = newGraph(); // empty registry — nothing registered
+  const id = GraphKit.ops.addNode(g, { meta: { type: 'consumer.custom' } });
+  check('node with an unregistered type still exists', !!g.node(id));
+  const issues = g.validate();
+  check('no errors', issues.filter((i) => i.level === 'error').length === 0);
+  check('a warning notes the unknown type', issues.some((i) => i.level === 'warn' && /unknown type/.test(i.message)));
+}
+
+/* ------------------------------------------------------------------ *
+ * The point of the whole exercise: a consumer type manages its own
+ * fan-out entirely through hooks. The library has no concept of ports,
+ * capacity, or an overflow trigger — it only fires onEdgeAdded /
+ * onEdgeRemoved and lets the type read/write the document through ctx.
+ * ------------------------------------------------------------------ */
+section('consumer-owned branching, built only from hooks');
+
+function StepType() {}
+StepType.prototype = Object.create(BaseNodeType.prototype);
+StepType.type = 'demo.step';
+StepType.label = 'Step';
+StepType.describe = () => ({ allowsChildren: false });
+/** The moment a step gets a second outgoing edge, move both onto a fresh
+ *  split node. This is entirely consumer policy — the library never
+ *  inspects edge counts on its own. */
+StepType.prototype.onEdgeAdded = function (ctx, edge) {
+  if (edge.from !== this.id) return;
+  const outs = ctx.activeEdgesFrom(this.id);
+  if (outs.length !== 2) return; // fire exactly once, at the second edge
+  const split = ctx.createNode({
+    parent: ctx.parentOf(this.id),
+    meta: { type: 'demo.branchSplit', label: 'Split' },
+    data: { origin: 'auto' }
+  });
+  outs.forEach((e) => ctx.retargetEdge(e.id, split, 'from'));
+  ctx.createEdge({ from: this.id, to: split });
+};
+
+function BranchSplitType() {}
+BranchSplitType.prototype = Object.create(BaseNodeType.prototype);
+BranchSplitType.type = 'demo.branchSplit';
+BranchSplitType.label = 'Branch split';
+BranchSplitType.describe = () => ({ allowsChildren: true });
+BranchSplitType.prototype.onEdgeRemoved = function (ctx) {
+  if ((this.data || {}).origin !== 'auto') return; // the user placed it, never auto-remove
+  if (ctx.childCount(this.id) > 0) return;          // it became a real subgraph
+  const ins = ctx.activeEdgesTo(this.id).length;
+  const outs = ctx.activeEdgesFrom(this.id).length;
+  if (ins === 1 && outs === 1) ctx.spliceSelf();
+  else if (ins === 0 || outs === 0) ctx.removeSelfAndEdges();
+};
+
+{
+  const registry = new GraphKit.TypeRegistry().register(StepType, BranchSplitType);
+  const g = newGraph(registry);
+  const a = GraphKit.ops.addNode(g, { meta: { type: 'demo.step', label: 'Choose' } });
+  const b = GraphKit.ops.addNode(g, { meta: { type: 'demo.step', label: 'Path A' } });
+  const c = GraphKit.ops.addNode(g, { meta: { type: 'demo.step', label: 'Path B' } });
+
+  GraphKit.ops.connect(g, a, b);
+  check('first connection is direct — no split yet', g.allEdges().length === 1 && g.activeEdgesFrom(a)[0].to === b);
+
+  GraphKit.ops.connect(g, a, c);
+  const split = g.allNodes().find((n) => g.typeOf(n.id) === 'demo.branchSplit');
+  check('a split appeared, entirely from the step\'s own hook', !!split);
+  check('the step now points only at the split', g.activeEdgesFrom(a).length === 1 && g.activeEdgesFrom(a)[0].to === split.id);
+  check('the split fans out to both original targets', g.activeEdgesFrom(split.id).length === 2);
+  check('document is valid throughout', g.validate().filter((i) => i.level === 'error').length === 0);
+
+  const toC = g.activeEdgesTo(c)[0];
+  GraphKit.ops.disconnectEdge(g, toC.id);
+  check('removing a branch collapses the split (its own onEdgeRemoved)', !g.node(split.id));
+  check('a connects straight to b again', g.activeEdgesFrom(a).length === 1 && g.activeEdgesFrom(a)[0].to === b);
+  check('no orphan edges left behind', g.allEdges().length === 1);
+}
+
+/* ------------------------------------------------------------------ */
+console.log('\n' + (fail === 0 ? 'ALL PASS' : fail + ' FAILED') + '  (' + pass + ' checks)');
+process.exit(fail === 0 ? 0 : 1);

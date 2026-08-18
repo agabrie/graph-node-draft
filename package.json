@@ -1,18 +1,19 @@
 {
   "name": "graph-node-draft",
   "version": "1.0.0",
-  "description": "Kind-agnostic graph document model for a node editor: spec, reference validator, and a runnable no-build demo library.",
+  "description": "Data-agnostic node-graph library: entities, a type-extension system and an atomic editing gate, with no rendering and no assumptions about domain vocabulary. example/ is a demo frontend, not the library.",
   "type": "module",
-  "main": "example/core/index.js",
+  "main": "lib/index.js",
   "exports": {
-    ".": "./example/core/index.js"
+    ".": "./lib/index.js"
   },
   "scripts": {
     "start": "node server.mjs",
-    "test": "npm run test:spec && npm run test:self && npm run test:dom",
+    "test": "npm run test:lib && npm run test:spec && npm run test:example-self && npm run test:example-dom",
+    "test:lib": "node test/selftest.mjs",
     "test:spec": "node spec/validate.mjs",
-    "test:self": "node example/tests/selftest.mjs",
-    "test:dom": "node example/tests/domtest.mjs",
+    "test:example-self": "node example/tests/selftest.mjs",
+    "test:example-dom": "node example/tests/domtest.mjs",
     "typecheck": "tsc --noEmit --strict --target es2022 reference/custom-node-branch-split.ts"
   },
   "engines": {

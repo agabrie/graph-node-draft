@@ -1,13 +1,15 @@
-/* server.mjs — tiny static dev server for the example page.
+/* server.mjs — tiny static dev server for the repo.
  *
- * ES modules do not load over file://, so the demo needs an HTTP origin.
- * No dependencies:  npm start  →  http://localhost:8080
+ * ES modules do not load over file://, so both the new demo (demo/) and the
+ * old example spike (example/) need an HTTP origin. No dependencies:
+ *   npm start  →  http://localhost:8080/        (demo/, against lib/)
+ *                 http://localhost:8080/example/example.html  (old spike)
  */
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 
-const ROOT = new URL('./example/', import.meta.url).pathname
+const ROOT = new URL('./', import.meta.url).pathname
   .replace(/^\/([A-Za-z]:)/, '$1'); // strip the leading slash Windows paths get
 const PORT = process.env.PORT || 8080;
 
@@ -23,7 +25,14 @@ const MIME = {
 
 createServer(async (req, res) => {
   const path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
-  const rel = path === '/' ? 'example.html' : path.slice(1);
+  if (path === '/') {
+    // A real redirect, not an internal rewrite: the browser's base URL must
+    // become /demo/ so the page's relative script src="app.js" resolves to
+    // /demo/app.js instead of /app.js.
+    res.writeHead(302, { Location: '/demo/index.html' }).end();
+    return;
+  }
+  const rel = path.slice(1);
   const file = normalize(join(ROOT, rel));
   if (!file.startsWith(normalize(ROOT))) { res.writeHead(403).end(); return; }
   try {
@@ -35,5 +44,6 @@ createServer(async (req, res) => {
     res.end('not found: ' + rel);
   }
 }).listen(PORT, () => {
-  console.log('example running at http://localhost:' + PORT + '/');
+  console.log('demo running at http://localhost:' + PORT + '/');
+  console.log('old example spike at http://localhost:' + PORT + '/example/example.html');
 });
