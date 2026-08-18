@@ -223,6 +223,81 @@ BranchSplitType.prototype.onEdgeRemoved = function (ctx) {
   check('no orphan edges left behind', g.allEdges().length === 1);
 }
 
+/* ------------------------------------------------------------------ *
+ * lockChildren / lockLinked support — pure graph/metadata queries that any
+ * renderer needs, not just the demo's SVG one. No pixel arithmetic here;
+ * that part (measure/layout) is deliberately left to the consumer.
+ * ------------------------------------------------------------------ */
+section('isChildrenLocked / isLinkLocked / ancestorsOf');
+{
+  const g = newGraph();
+  const a = GraphKit.ops.addNode(g, {});
+  check('children locked by default (no meta at all)', g.isChildrenLocked(a) === true);
+  check('link locked is off by default', g.isLinkLocked(a) === false);
+
+  GraphKit.ops.setNodeMeta(g, a, { lockChildren: false });
+  check('lockChildren:false is honoured', g.isChildrenLocked(a) === false);
+  GraphKit.ops.setNodeMeta(g, a, { lockLinked: true });
+  check('lockLinked:true is honoured', g.isLinkLocked(a) === true);
+
+  const b = GraphKit.ops.addNode(g, { parent: a });
+  const c = GraphKit.ops.addNode(g, { parent: b });
+  check('ancestorsOf walks the full parent chain', [...g.ancestorsOf(c)].sort().join() === [a, b].sort().join());
+  check('a top-level node has no ancestors', g.ancestorsOf(a).size === 0);
+}
+
+section('visibleAncestorOf');
+{
+  const g = newGraph();
+  const top = GraphKit.ops.addNode(g, {});
+  check('a fully visible node is its own visible ancestor', g.visibleAncestorOf(top) === top);
+
+  const grp = GraphKit.ops.addNode(g, {});
+  const child = GraphKit.ops.addNode(g, { parent: grp });
+  const grandchild = GraphKit.ops.addNode(g, { parent: child });
+  check('nothing collapsed — still visible', g.visibleAncestorOf(grandchild) === grandchild);
+
+  GraphKit.ops.collapse(g, grp, true);
+  check('hidden two levels down resolves to the collapsed ancestor', g.visibleAncestorOf(grandchild) === grp);
+  check('the immediate child is hidden too', g.visibleAncestorOf(child) === grp);
+  check('the collapsed node itself is always its own visible ancestor', g.visibleAncestorOf(grp) === grp);
+
+  GraphKit.ops.collapse(g, grp, false);
+  check('expanding restores direct visibility', g.visibleAncestorOf(grandchild) === grandchild);
+}
+
+section('linkLockedCompanions: transitive, direction-aware, ancestor-excluded');
+{
+  const g = newGraph();
+  const a = GraphKit.ops.addNode(g, {});
+  const b = GraphKit.ops.addNode(g, {});
+  const c = GraphKit.ops.addNode(g, {});
+  const upstream = GraphKit.ops.addNode(g, {});
+  GraphKit.ops.connect(g, a, b);
+  GraphKit.ops.connect(g, b, c);           // transitive: a -> b -> c
+  GraphKit.ops.connect(g, upstream, a);    // reverse direction — must not appear
+  const companions = g.linkLockedCompanions(a);
+  check('walks transitively through an unflagged intermediate', companions.includes(b) && companions.includes(c));
+  check('direction matters — upstream is excluded', !companions.includes(upstream));
+
+  const p = GraphKit.ops.addNode(g, {});
+  const child = GraphKit.ops.addNode(g, { parent: p });
+  GraphKit.ops.connect(g, child, p); // links back to its own container
+  const d = GraphKit.ops.addNode(g, {});
+  GraphKit.ops.connect(g, child, d);
+  const childCompanions = g.linkLockedCompanions(child);
+  check('a node\'s own containment ancestor is excluded even if linked', !childCompanions.includes(p));
+  check('an unrelated downstream link still comes through', childCompanions.includes(d));
+
+  const autoGroup = GraphKit.ops.addNode(g, { meta: { lockChildren: false } });
+  const autoChild = GraphKit.ops.addNode(g, { parent: autoGroup });
+  const outside = GraphKit.ops.addNode(g, {});
+  GraphKit.ops.connect(g, outside, autoChild);
+  const companionsOfOutside = g.linkLockedCompanions(outside);
+  check('a node nested in a non-locked container is excluded from companions',
+    !companionsOfOutside.includes(autoChild));
+}
+
 /* ------------------------------------------------------------------ */
 console.log('\n' + (fail === 0 ? 'ALL PASS' : fail + ' FAILED') + '  (' + pass + ' checks)');
 process.exit(fail === 0 ? 0 : 1);

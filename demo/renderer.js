@@ -1,34 +1,22 @@
 /* demo/renderer.js — one possible renderer. Nothing here is library code.
  *
  * Reads only: type/label from metadata, containment, and metadata's x/y/
- * collapsed/lockChildren. It never looks inside node.data. No ports exist in
- * lib/, so edges connect box-to-box, not port-to-port.
+ * collapsed/lockChildren/lockLinked. It never looks inside node.data. No
+ * ports exist in lib/, so edges connect box-to-box, not port-to-port.
  *
  * Collapsing a subgraph no longer rewrites any edges (there are no portals
  * in this shape — see docs/domain-shape.md §10.4). Instead, an edge whose
  * endpoint is hidden behind a collapsed ancestor is drawn to that ancestor's
- * box: `anchorFor` walks up the parent chain to find it. This is the
- * renderer-side replacement for what portals used to do structurally.
+ * box — the renderer-side replacement for what portals used to do
+ * structurally. *Which* ancestor that is comes from the library
+ * (graph.visibleAncestorOf, a pure read of `collapsed` and containment);
+ * *where its box is and how the line is drawn* is this file's job.
  *
- * lockChildren defaults to true (docs/domain-shape.md §2): a container's
- * children keep an explicit position relative to it and are individually
- * draggable, so moving the container moves them with it for free — the
- * position is relative, not recomputed. A child with no stored position yet
- * falls back to a small grid. Set lockChildren:false on a container to opt
- * back into the classic auto-stacked column layout.
- *
- * lockLinked is the equivalent for edges rather than containment, and it is
- * opt-in (default off): a node with lockLinked:true drags everything
- * downstream of it — its outgoing edges' targets, and transitively theirs,
- * and so on — along with it, by the same delta. Direction matters, same as
- * containment — a node drags what it points at, never what points at it.
- * The lock is only checked on the node the drag started from; it does not
- * need to be set on every node in between for the chain to keep
- * propagating. Unlike a locked child's position, nothing is stored as
- * "relative to a link" — a link has no single owner the way a child has one
- * parent, so this is purely a drag-time behaviour computed from each node's
- * current box and committed as an ordinary position update to every node
- * that moved.
+ * lockChildren and lockLinked are library concepts too — Graph exposes
+ * isChildrenLocked, isLinkLocked and linkLockedCompanions, and the pixel
+ * arithmetic below (measure/layout/place, and the drag math in _onMove/
+ * _onUp) is the renderer-specific part built on top of them: turning "these
+ * ids should move together" into actual box positions on screen.
  */
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -44,22 +32,6 @@ function trim(s, n) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }
 
 /* ---------------- layout ---------------- */
 
-/** Default is locked: explicit lockChildren:false is the only way out. */
-function isLocked(g, id) {
-  const meta = g.metaOf('node', id) || {};
-  return meta.lockChildren !== false;
-}
-
-/** Opt-in: dragging this node also drags every node it has an edge to or
- *  from. Unlike lockChildren, this defaults to off — a node's links are
- *  unbounded and can reach anywhere in the graph, so making that the
- *  default risked chaining unrelated parts of the graph together the
- *  moment two nodes happened to be connected. */
-function isLinkLocked(g, id) {
-  const meta = g.metaOf('node', id) || {};
-  return !!meta.lockLinked;
-}
-
 /** A locked child's position relative to its container's content origin.
  *  Falls back to a small grid when the child has never been positioned. */
 function relativePos(g, id, index) {
@@ -72,7 +44,7 @@ function relativePos(g, id, index) {
 function measure(g, id) {
   const kids = g.childrenOf(id).filter((n) => n.state === 'active');
   if (!kids.length || g.isCollapsed(id)) return { w: NODE_W, h: NODE_H };
-  if (isLocked(g, id)) {
+  if (g.isChildrenLocked(id)) {
     let maxX = 0, maxY = 0;
     kids.forEach((k, i) => {
       const km = measure(g, k.id);
@@ -101,7 +73,7 @@ function layout(g) {
     boxes[node.id] = { x, y, w: m.w, h: m.h };
     if (g.isCollapsed(node.id)) return;
     const kids = g.childrenOf(node.id).filter((n) => n.state === 'active');
-    if (isLocked(g, node.id)) {
+    if (g.isChildrenLocked(node.id)) {
       kids.forEach((k, i) => {
         const p = relativePos(g, k.id, i);
         place(k, x + PAD + p.x, y + HEADER + PAD + p.y);
@@ -132,17 +104,6 @@ function layout(g) {
   return boxes;
 }
 
-/** Nearest collapsed ancestor of id, or id itself if fully visible. */
-function anchorFor(g, id) {
-  let cur = id;
-  for (;;) {
-    const parent = g.parentOf(cur);
-    if (!parent) return id;
-    if (g.isCollapsed(parent)) return parent;
-    cur = parent;
-  }
-}
-
 /* ---------------- render ---------------- */
 
 export function Renderer(host, graph, handlers) {
@@ -168,54 +129,18 @@ Renderer.prototype._svgPoint = function (ev) {
   return { x: ev.clientX - r.left, y: ev.clientY - r.top };
 };
 
-/** Every containment ancestor of id: parent, grandparent, and so on. */
-function ancestorsOf(g, id) {
-  const out = new Set();
-  let p = g.parentOf(id);
-  while (p) { out.add(p); p = g.parentOf(p); }
-  return out;
-}
-
-/** Everything downstream of id, following outgoing edges transitively —
- *  the candidates a lockLinked drag carries along. Direction matters, same
- *  as containment: a node drags what it points at (and what that points at,
- *  and so on), never what points at it — otherwise dragging one end of a
- *  chain would drag the whole chain backwards too. The lock only needs to
- *  be set on the node being dragged; it is not required on the nodes in
- *  between for the chain to keep propagating. Only nodes that are
- *  themselves individually draggable and currently on screen qualify;
- *  already-visited nodes stop the walk, which also guards against cycles.
- *
- *  One exclusion: an edge can point at one of id's own containment
- *  ancestors (edges cross containment freely — see docs/domain-shape.md
- *  §2), and dragging that ancestor would fight the containment math, which
- *  already repositions id as a side effect of moving its container. That
- *  ancestor is excluded from the drag entirely — it neither moves nor
- *  propagates the drag further through its own downstream links. */
+/** graph.linkLockedCompanions(id) already resolves the full set of ids a
+ *  lockLinked drag should carry (transitive, direction-aware, ancestor- and
+ *  auto-layout-excluded — see lib/services/topology.js). This layer adds
+ *  only what the library cannot know: whether each one is currently on
+ *  screen, and where — pixel state that lives in this.boxes. */
 Renderer.prototype._companionsOf = function (id) {
   const g = this.graph;
-  const ancestors = ancestorsOf(g, id);
-  const seen = new Set([id]);
   const out = [];
-  let frontier = [id];
-  while (frontier.length) {
-    const next = [];
-    frontier.forEach((cur) => {
-      g.activeEdgesFrom(cur).forEach((e) => {
-        const other = e.to;
-        if (!other || seen.has(other) || ancestors.has(other)) return;
-        seen.add(other);
-        const parent = g.parentOf(other);
-        const draggable = !parent || isLocked(g, parent);
-        const box = this.boxes[other];
-        if (draggable && box) {
-          out.push({ id: other, startX: box.x, startY: box.y });
-          next.push(other);
-        }
-      });
-    });
-    frontier = next;
-  }
+  g.linkLockedCompanions(id).forEach((otherId) => {
+    const box = this.boxes[otherId];
+    if (box) out.push({ id: otherId, startX: box.x, startY: box.y });
+  });
   return out;
 };
 
@@ -333,8 +258,8 @@ Renderer.prototype._node = function (svg, n) {
   if (!known) cls.push('unknown');
   if (type === 'demo.branchSplit') cls.push('split');
   if (isLinkSource) cls.push('link-source');
-  if (isContainer && !isLocked(g, n.id)) cls.push('auto'); // opted out of lockChildren
-  if (isLinkLocked(g, n.id)) cls.push('link-locked');
+  if (isContainer && !g.isChildrenLocked(n.id)) cls.push('auto'); // opted out of lockChildren
+  if (g.isLinkLocked(n.id)) cls.push('link-locked');
 
   const grp = el('g', { class: cls.join(' '), 'data-node': n.id });
   grp.appendChild(el('rect', { x: b.x, y: b.y, width: b.w, height: b.h, rx: isContainer ? 14 : 9 }));
@@ -349,7 +274,7 @@ Renderer.prototype._node = function (svg, n) {
 
   if (hasKids) {
     const toggleText = (collapsed ? '▸ expand (' + g.childNodeCount(n.id) + ')' : '▾ collapse') +
-      (isLocked(g, n.id) ? '' : ' · auto-layout');
+      (g.isChildrenLocked(n.id) ? '' : ' · auto-layout');
     const t = el('text', { x: b.x + 12, y: b.y + b.h - 10, class: 'toggle' }, toggleText);
     t.addEventListener('click', (ev) => {
       ev.stopPropagation();
@@ -362,7 +287,7 @@ Renderer.prototype._node = function (svg, n) {
   // is locked (the default) — its position is stored relative to the
   // container, so this is what makes "drag the group, children follow" work
   // without the renderer treating the two cases specially.
-  const draggable = !n.parent || isLocked(g, n.parent);
+  const draggable = !n.parent || g.isChildrenLocked(n.parent);
   grp.addEventListener('mousedown', (ev) => {
     if (ev.target.classList.contains('toggle')) return;
     if (!draggable) return;
@@ -371,7 +296,7 @@ Renderer.prototype._node = function (svg, n) {
       id: n.id, parent: n.parent,
       dx: pt.x - b.x, dy: pt.y - b.y,
       startX: b.x, startY: b.y,
-      companions: isLinkLocked(g, n.id) ? this._companionsOf(n.id) : [],
+      companions: g.isLinkLocked(n.id) ? this._companionsOf(n.id) : [],
       moved: false
     };
   });
@@ -393,7 +318,7 @@ Renderer.prototype._node = function (svg, n) {
 
 Renderer.prototype._edge = function (svg, e) {
   const g = this.graph;
-  const fromId = anchorFor(g, e.from), toId = anchorFor(g, e.to);
+  const fromId = g.visibleAncestorOf(e.from), toId = g.visibleAncestorOf(e.to);
   if (fromId === toId) return; // both ends hidden behind the same collapsed ancestor
   const a = this.boxes[fromId], b = this.boxes[toId];
   if (!a || !b) return;

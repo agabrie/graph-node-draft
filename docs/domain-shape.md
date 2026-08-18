@@ -69,8 +69,10 @@ reordering never rewrites keys.
   - `type` — name of a registered node type. Absent or unknown is legal (§4).
   - `label` — display text. Editing it touches nothing else.
   - `x`, `y` — coordinates. Absent means "not placed yet; renderer decides".
-  - `collapsed` — subgraph folded shut. What is *visible* when collapsed is
-    the renderer's computation; the library only stores the flag.
+  - `collapsed` — subgraph folded shut. The library resolves which nodes are
+    visible under it and which ancestor stands in for a hidden one
+    (`visibleNodes`, `visibleAncestorOf`) — pure reads of this flag and
+    containment. What a renderer draws with that is its own call.
   - `lockChildren` — children keep their positions relative to this node.
 
 **Payload**
@@ -233,8 +235,13 @@ Recorded so the reasoning isn't lost:
    records have their own ids; nodes and edges point at them via `meta`.
    Chosen over a block-on-the-record for the sharing and swapping it enables;
    costs one extra invariant (§7.4) and the possibility of orphans.
-2. **Visibility is the renderer's job.** The library stores `collapsed`;
-   computing what is visible under it is renderer logic.
+2. **Visibility is resolved by the library, drawn by the renderer.**
+   Given `collapsed`, which nodes are visible and which ancestor stands in
+   for a hidden one are graph/metadata reads with no pixels involved, so
+   they live in `lib/` (`visibleNodes`, `visibleAncestorOf`). Placing
+   anything on screen from that — layout, how a redirected edge is drawn —
+   stays renderer logic. (Revised from an earlier draft of this decision,
+   which drew the line one function higher, at the renderer.)
 3. **Edge metadata is `label`, `style`, `curvature`.**
 4. **One adapter per Mermaid dialect**, not one adapter with three branches.
 5. **No ports.** Node-to-node edges with labels; branch discrimination lives
